@@ -23,5 +23,5 @@ ROOT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 
 $ROOT_DIR/../ric-dep/bin/uninstall
 
-
+helm del --purge nfs-release-1
 
