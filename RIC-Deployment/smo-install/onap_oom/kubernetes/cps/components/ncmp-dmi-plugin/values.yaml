@@ -47,9 +47,8 @@ global:
     virtualhost:
       baseurl: "simpledemo.onap.org"
 
-image: onap/ncmp-dmi-plugin:1.0.1
+image: onap/ncmp-dmi-plugin:1.5.0
 containerPort: &svc_port 8080
-managementPort: &mgt_port 8081
 
 prometheus:
   enabled: false
@@ -60,17 +59,14 @@ service:
   ports:
     - name: &port http
       port: *svc_port
-    - name: http-management
-      port: *mgt_port
-      targetPort: *mgt_port
 
 metrics:
   serviceMonitor:
-    port: http-management
+    port: http
       ## specify target port if name is not given to the port in the service definition
       ##
     # targetPort: 8080
-    path: /manage/prometheus
+    path: /actuator/prometheus
     interval: 60s
     basicAuth:
       enabled: false
@@ -88,18 +84,18 @@ replicaCount: 1
 resources:
   small:
     limits:
-      cpu: 2
-      memory: 2Gi
+      cpu: "2"
+      memory: "1Gi"
     requests:
-      cpu: 1
-      memory: 1Gi
+      cpu: "1"
+      memory: "1Gi"
   large:
     limits:
-      cpu: 4
-      memory: 4Gi
+      cpu: "4"
+      memory: "2Gi"
     requests:
-      cpu: 2
-      memory: 2Gi
+      cpu: "2"
+      memory: "2Gi"
   unlimited: {}
 # probe configuration parameters
 liveness:
@@ -108,19 +104,19 @@ liveness:
   # necessary to disable liveness probe when setting breakpoints
   # in debugger so K8s doesn't restart unresponsive container
   enabled: true
-  path: /manage/health
-  port: *mgt_port
+  path: /actuator/health
+  port: *svc_port
 
 readiness:
   initialDelaySeconds: 15
   periodSeconds: 15
-  path: /manage/health
-  port: *mgt_port
+  path: /actuator/health
+  port: *svc_port
 
 ingress:
   enabled: true
   service:
-    - baseaddr: "ncmp-dmi-plugin"
+    - baseaddr: "cps-ncmp-dmi-plugin-api"
       path: "/"
       name: *svc_name
       port: *svc_port
@@ -164,16 +160,51 @@ config:
 #    spring.config.min-size: 10
 
 logging:
-  level: INFO
+  level: DEBUG
   cps: DEBUG
   path: /tmp
 
 readinessCheck:
   wait_for:
-    - cps-core
+    services:
+      - cps-core
 
 minReadySeconds: 10
 updateStrategy:
   type: RollingUpdate
   maxUnavailable: 0
   maxSurge: 1
+
+# Strimzi KafkaUser and Topic config
+kafkaTopic:
+  - name: &ncmpDmiCmAvcSubscriptionNcmpDmiPluginTopic ncmp-dmi-cm-avc-subscription-ncmp-dmi-plugin
+    retentionMs: 7200000
+    segmentBytes: 1073741824
+  - name: &dmiNcmpCmAvcSubscriptionTopic dmi-ncmp-cm-avc-subscription
+    retentionMs: 7200000
+    segmentBytes: 1073741824
+  - name: &ncmpAsyncM2MTopic ncmp-async-m2m
+    retentionMs: 7200000
+    segmentBytes: 1073741824
+
+kafkaUser:
+  authenticationType: scram-sha-512
+  acls:
+    - name: ncmp-dmi-plugin-group
+      type: group
+      operations: [Read]
+    - name: *ncmpDmiCmAvcSubscriptionNcmpDmiPluginTopic
+      type: topic
+      operations: [Read]
+    - name: *dmiNcmpCmAvcSubscriptionTopic
+      type: topic
+      operations: [Write]
+    - name: *ncmpAsyncM2MTopic
+      type: topic
+      operations: [Write]
+
+topics:
+  config:
+    app.ncmp.async.topic: *ncmpAsyncM2MTopic
+    app.dmi.avc.subscription-topic: *ncmpDmiCmAvcSubscriptionNcmpDmiPluginTopic
+    app.dmi.avc.subscription-response-topic: *dmiNcmpCmAvcSubscriptionTopic

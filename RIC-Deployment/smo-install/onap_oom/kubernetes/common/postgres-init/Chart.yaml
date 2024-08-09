@@ -16,13 +16,19 @@
 apiVersion: v2
 description: Chart for Postgres init job
 name: postgres-init
-version: 10.0.0
+version: 13.0.2
 
 
 dependencies:
   - name: common
-    version: ~10.x-0
+    version: ~13.x-0
     repository: 'file://../common'
   - name: repositoryGenerator
-    version: ~10.x-0
+    version: ~13.x-0
     repository: 'file://../repositoryGenerator'
+  - name: readinessCheck
+    version: ~13.x-0
+    repository: '@local'
+  - name: serviceAccount
+    version: ~13.x-0
+    repository: '@local'

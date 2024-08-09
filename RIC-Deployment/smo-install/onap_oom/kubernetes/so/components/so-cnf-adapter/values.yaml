@@ -20,12 +20,6 @@ global:
   soCryptoImage: sdesbure/so_crypto:latest
   persistence:
     mountPath: /dockerdata-nfs
-  security:
-    aaf:
-      enabled: false
-  aaf:
-    auth:
-      header: ${AAF_AUTH}
   aai:
     enabled: true
 #################################################################
@@ -51,13 +45,6 @@ secrets:
     login: '{{ .Values.server.actuator.username }}'
     password: '{{ .Values.server.actuator.password }}'
     passwordPolicy: required
-  - uid: so-aaf-creds
-    name: '{{ include "common.release" . }}-so-cnf-aaf-creds'
-    type: basicAuth
-    externalSecret: '{{ tpl (default "" .Values.server.aafCredsExternalSecret) . }}'
-    login: '{{ .Values.server.aaf.username }}'
-    password: '{{ .Values.server.aaf.password }}'
-    passwordPolicy: required
   - uid: so-aai-creds
     name: '{{ include "common.release" . }}-so-cnf-aai-creds'
     type: basicAuth
@@ -76,13 +63,22 @@ secrets:
 #################################################################
 # Application configuration defaults.
 #################################################################
-image: onap/so/so-cnf-adapter:1.9.2
+image: onap/so/so-cnf-adapter:1.10.0
 pullPolicy: Always
 
 readinessCheck:
   wait_for:
     jobs:
       - '{{ include "common.release" . }}-so-mariadb-config-job'
+
+# Local mariadb galera instance default name
+mariadb-galera:
+  nameOverride: so-mariadb-galera
+  service:
+    internalPort: 3306
+  mariadbOperator:
+    galera:
+      enabled: false
 
 db:
   userName: so_user
@@ -92,10 +88,6 @@ db:
   adminPassword: so_Admin123
   # adminCredsExternalSecret: some secret
 server:
-  aaf:
-    username: so@so.onap.org
-    password: demo123456
-  # aafCredsExternalSecret: some secret
   aai:
     username: aai@aai.onap.org
     password: demo123456!
@@ -125,32 +117,31 @@ updateStrategy:
   type: RollingUpdate
   maxUnavailable: 1
   maxSurge: 1
+
+#################################################################
+# soHelpers part
+#################################################################
 soHelpers:
-  nameOverride: so-cnf-cert-init
-  certInitializer:
-    nameOverride: so-cnf-cert-init
-    credsPath: /opt/app/osaaf/local
-  cadi:
-    apiEnforcement: org.onap.so.openStackAdapterPerm
   containerPort: *containerPort
+
 # Resource Limit flavor -By Default using small
 flavor: small
 # Segregation for Different environment (Small and Large)
 resources:
   small:
     limits:
-      memory: 4Gi
-      cpu: 2000m
+      cpu: "1"
+      memory: "1Gi"
     requests:
-      memory: 1Gi
-      cpu: 500m
+      cpu: "0.5"
+      memory: "1Gi"
   large:
     limits:
-      memory: 8Gi
-      cpu: 4000m
+      cpu: "2"
+      memory: "2Gi"
     requests:
-      memory: 2Gi
-      cpu: 1000m
+      cpu: "1"
+      memory: "2Gi"
   unlimited: {}
 livenessProbe:
   path: /manage/health
@@ -163,6 +154,10 @@ livenessProbe:
   failureThreshold: 3
 ingress:
   enabled: false
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: so-read
 nodeSelector: {}
 tolerations: []
 affinity: {}

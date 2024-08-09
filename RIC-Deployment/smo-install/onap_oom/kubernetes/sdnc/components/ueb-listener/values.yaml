@@ -18,6 +18,8 @@
 global:
   nodePortPrefix: 302
   mariadbGalera:
+    # flag to enable the DB creation via mariadb-operator
+    useOperator: true
     #This flag allows SO to instantiate its own mariadb-galera cluster
     #If shared instance is used, this chart assumes that DB already exists
     localCluster: false
@@ -55,7 +57,7 @@ secrets:
 # Application configuration defaults.
 #################################################################
 # application image
-image: onap/sdnc-ueb-listener-image:2.2.5
+image: onap/sdnc-ueb-listener-image:2.6.1
 pullPolicy: Always
 
 # flag to enable debugging - application support required
@@ -92,6 +94,9 @@ mariadb-galera:
   persistence:
     enabled: true
     mountSubPath: ueb-listener/maria/data
+  mariadbOperator:
+    galera:
+      enabled: false
 
 # default number of instances
 replicaCount: 1
@@ -113,10 +118,30 @@ readiness:
   periodSeconds: 10
 
 service:
+  type: ClusterIP
   name: sdnc-ueb-listener
+  internalPort: 80
+  ports:
+    - name: http
+      port: 80
+
+# Strimzi KafkaUser definition
+kafkaUser:
+  acls:
+    - name: sdnc
+      type: group
+      operations: [Read]
+    - name: SDC-DISTR
+      type: topic
+      patternType: prefix
+      operations: [Read, Write]
 
 ingress:
   enabled: false
+
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals: []
 
 #Resource limit flavor -By default using small
 flavor: small
@@ -124,18 +149,18 @@ flavor: small
 resources:
   small:
     limits:
-      cpu: 2
-      memory: 4Gi
+      cpu: "1"
+      memory: "1Gi"
     requests:
-      cpu: 0.5
-      memory: 1Gi
+      cpu: "0.5"
+      memory: "1Gi"
   large:
     limits:
-      cpu: 4
-      memory: 8Gi
+      cpu: "2"
+      memory: "2Gi"
     requests:
-      cpu: 1
-      memory: 2Gi
+      cpu: "1"
+      memory: "2Gi"
   unlimited: {}
 
 #Pods Service Account

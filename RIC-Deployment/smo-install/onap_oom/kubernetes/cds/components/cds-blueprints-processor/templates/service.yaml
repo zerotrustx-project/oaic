@@ -1,5 +1,6 @@
 {{/*
 # Copyright (c) 2019 IBM, Bell Canada
+# Modification Copyright © 2023 Nordix Foundation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,19 +25,15 @@ metadata:
     chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
     release: {{ include "common.release" . }}
     heritage: {{ .Release.Service }}
-  annotations:
 spec:
   type: {{ .Values.service.http.type }}
   ports:
     - port: {{ .Values.service.http.externalPort }}
       targetPort: {{ .Values.service.http.internalPort }}
-      {{- if eq .Values.service.http.type "NodePort"}}
-      nodePort: {{ .Values.global.nodePortPrefixExt | default .Values.nodePortPrefixExt }}{{ .Values.service.http.nodePort }}
-      {{- end}}
       name: {{ .Values.service.http.portName | default "http" }}
   selector:
-    app: {{ include "common.name" . }}
-    release: {{ include "common.release" . }}
+    app.kubernetes.io/instance: {{ include "common.release" . }}
+    app.kubernetes.io/name: {{ include "common.name" . }}
 ---
 apiVersion: v1
 kind: Service
@@ -48,7 +45,6 @@ metadata:
     chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
     release: {{ include "common.release" . }}
     heritage: {{ .Release.Service }}
-  annotations:
 spec:
   type: {{ .Values.service.grpc.type }}
   ports:
@@ -56,8 +52,8 @@ spec:
       targetPort: {{ .Values.service.grpc.internalPort }}
       name: {{ .Values.service.grpc.portName | default "grpc" }}
   selector:
-    app: {{ include "common.name" . }}
-    release: {{ include "common.release" . }}
+    app.kubernetes.io/instance: {{ include "common.release" . }}
+    app.kubernetes.io/name: {{ include "common.name" . }}
 ---
 apiVersion: v1
 kind: Service
@@ -69,16 +65,13 @@ metadata:
     chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
     release: {{ include "common.release" . }}
     heritage: {{ .Release.Service }}
-  annotations:
 spec:
   type: {{ .Values.service.cluster.type }}
+  clusterIP: None
   ports:
     - port: {{ .Values.service.cluster.externalPort }}
       targetPort: {{ .Values.service.cluster.internalPort }}
-      {{- if eq .Values.service.cluster.type "NodePort"}}
-      nodePort: {{ .Values.global.nodePortPrefixExt | default .Values.nodePortPrefixExt }}{{ .Values.service.cluster.nodePort }}
-      {{- end}}
       name: {{ .Values.service.cluster.portName | default "cluster" }}
   selector:
-    app: {{ include "common.name" . }}
-    release: {{ include "common.release" . }}
+    app.kubernetes.io/instance: {{ include "common.release" . }}
+    app.kubernetes.io/name: {{ include "common.name" . }}

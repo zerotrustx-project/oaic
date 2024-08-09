@@ -14,4 +14,6 @@
 # limitations under the License.
 */}}
 
+{{- if not .Values.global.cassandra.useOperator }}
 {{ include "common.headlessService" . }}
+{{- end }}

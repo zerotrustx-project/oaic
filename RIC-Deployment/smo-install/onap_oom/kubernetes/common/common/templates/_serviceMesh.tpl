@@ -1,5 +1,6 @@
 {{/*
 # Copyright © 2020 Amdocs, Bell Canada, Orange
+# Modifications Copyright © 2023 Nordix Foundation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,14 +27,27 @@ true
 {{- end -}}
 
 {{/*
+  Calculate if we require a sidecar killer.
+*/}}
+{{- define "common.requireSidecarKiller" -}}
+{{-   if (include "common.onServiceMesh" .) }}
+{{-     if eq .Values.global.serviceMesh.engine "istio" }}
+{{-       if not (default false .Values.global.serviceMesh.nativeSidecars) -}}
+true
+{{-       end -}}
+{{-     end -}}
+{{-   end -}}
+{{- end -}}
+
+{{/*
   Kills the sidecar proxy associated with a pod.
 */}}
 {{- define "common.serviceMesh.killSidecar" -}}
-{{-   if (include "common.onServiceMesh" .) }}
+{{-   if (include "common.requireSidecarKiller" .) }}
 RCODE="$?";
 echo "*** script finished with exit code $RCODE" ;
 echo "*** killing service mesh sidecar" ;
-curl -sf -X POST http://127.0.0.1:15020/quitquitquit ;
+wget --quiet --post-data '' --output-document=- http://127.0.0.1:15020/quitquitquit || exit $? ;
 echo "" ;
 echo "*** exiting with script exit code" ;
 exit "$RCODE"
@@ -46,7 +60,7 @@ exit "$RCODE"
 {{- define "common.waitForJobContainer" -}}
 {{-   $dot := default . .dot -}}
 {{-   $wait_for_job_container := default $dot.Values.wait_for_job_container .wait_for_job_container -}}
-{{- if (include "common.onServiceMesh" .) }}
+{{- if (include "common.requireSidecarKiller" .) }}
 - name: {{ include "common.name" $dot }}{{ ternary "" (printf "-%s" $wait_for_job_container.name) (empty $wait_for_job_container.name) }}-service-mesh-wait-for-job-container
   image: {{ include "repositoryGenerator.image.quitQuit" $dot }}
   imagePullPolicy: {{ $dot.Values.global.pullPolicy | default $dot.Values.pullPolicy }}
@@ -64,5 +78,91 @@ exit "$RCODE"
       fieldRef:
         apiVersion: v1
         fieldPath: metadata.namespace
+  {{ include "common.containerSecurityContext" . | indent 2 | trim }}
+  resources:
+    limits:
+      cpu: 100m
+      memory: 500Mi
+    requests:
+      cpu: 10m
+      memory: 10Mi
 {{- end }}
 {{- end }}
+
+{{/*
+  Use Authorization Policies or not.
+*/}}
+{{- define "common.useAuthorizationPolicies" -}}
+{{-   if (include "common.onServiceMesh" .) }}
+{{-     if .Values.global.authorizationPolicies -}}
+{{-       if (default false .Values.global.authorizationPolicies.enabled) -}}
+true
+{{-       end -}}
+{{-     end -}}
+{{-   end -}}
+{{- end -}}
+
+{{/*
+  Create Authorization Policy template.
+    If common.useAuthorizationPolicies returns true:
+      Will create authorization policy, provided with array of authorized principals in .Values.serviceMesh.authorizationPolicy.authorizedPrincipals
+        in the format:
+          authorizedPrincipals:
+          - serviceAccount: <serviceaccount name>                       (Mandatory)
+            namespace: <namespace name>                                 (Optional, will default to onap)
+            allowedOperationMethods: <list of allowed HTTP operations   (Optional, will default to ["GET", "POST", "PUT", "PATCH", "DELETE"])
+
+      If no authorizedPrincipals provided, will default to denying all requests to the app matched under the
+        spec:
+          selector:
+            matchLabels:
+              app: <app-to-match>    ("app" corresponds to a key defined in "common.labels", which is included in "common.service")
+
+    If common.useAuthorizationPolicies returns false:
+      Will not create an authorization policy
+*/}}
+{{- define "common.authorizationPolicy" -}}
+{{-   $dot := default . .dot -}}
+{{-   $trustedDomain := default "cluster.local" $dot.Values.serviceMesh.authorizationPolicy.trustedDomain -}}
+{{-   $authorizedPrincipals := default list $dot.Values.serviceMesh.authorizationPolicy.authorizedPrincipals -}}
+{{-   $defaultOperationMethods := list "GET" "POST" "PUT" "PATCH" "DELETE" -}}
+{{-   $relName := include "common.release" . -}}
+{{-   if (include "common.useAuthorizationPolicies" .) }}
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: {{ include "common.fullname" (dict "suffix" "authz" "dot" . )}}
+  namespace: {{ include "common.namespace" . }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ include "common.name" . }}
+  action: ALLOW
+  rules:
+{{-     if $authorizedPrincipals }}
+{{-       range $principal := $authorizedPrincipals }}
+  - from:
+    - source:
+        principals:
+{{-         $namespace := default "onap" $principal.namespace -}}
+{{-         if eq "onap" $namespace }}
+        - "{{ $trustedDomain }}/ns/{{ $namespace }}/sa/{{ $relName }}-{{ $principal.serviceAccount }}"
+{{-         else }}
+        - "{{ $trustedDomain }}/ns/{{ $namespace }}/sa/{{ $principal.serviceAccount }}"
+{{-         end }}
+    to:
+    - operation:
+        methods:
+{{-         if $principal.allowedOperationMethods }}
+{{-           range $method := $principal.allowedOperationMethods }}
+        - {{ $method }}
+{{-           end }}
+{{-         else }}
+{{-           range $method := $defaultOperationMethods }}
+        - {{ $method }}
+{{-           end }}
+{{-         end }}
+{{-       end }}
+{{-     end }}
+{{-   end }}
+{{- end -}}

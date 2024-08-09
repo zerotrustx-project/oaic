@@ -23,14 +23,14 @@ spec:
   template:
     metadata: {{- include "common.templateMetadata" . | nindent 6 }}
     spec:
-      initContainers: {{ include "common.certInitializer.initContainer" . | indent 6 }}
+      initContainers:
       - name: {{ include "common.name" . }}-readiness
         image: {{ include "repositoryGenerator.image.readiness" . }}
         imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
         command:
         - /app/ready.py
         args:
-        - --container-name
+        - --service-name
         - {{ .Values.config.sdncChartName }}
         env:
         - name: NAMESPACE
@@ -38,6 +38,13 @@ spec:
             fieldRef:
               apiVersion: v1
               fieldPath: metadata.namespace
+        resources:
+          limits:
+            cpu: "100m"
+            memory: "500Mi"
+          requests:
+            cpu: "3m"
+            memory: "20Mi"
 
       containers:
         - name: {{ include "common.name" . }}
@@ -62,19 +69,13 @@ spec:
           - name: WEBPROTOCOL
             value: {{ .Values.config.webProtocol }}
           - name: WEBPORT
-            value: {{ .Values.config.webPort | quote }}
+            value : {{ .Values.config.webPort | quote }}
           - name: SDNRPROTOCOL
-            value: {{ .Values.config.sdnrProtocol }}
+            value : {{ .Values.config.sdnrProtocol }}
           - name: SDNRHOST
-            value: {{ .Values.config.sdnrHost }}.{{ include "common.namespace" . }}
+            value : {{ .Values.config.sdnrHost }}.{{ include "common.namespace" . }}
           - name: SDNRPORT
-            value: {{ .Values.config.sdnrPort | quote }}
-          - name: SSL_CERT_DIR
-            value: {{ .Values.config.sslCertDir }}
-          - name: SSL_CERTIFICATE
-            value: {{ .Values.config.sslCertiticate }}
-          - name: SSL_CERTIFICATE_KEY
-            value: {{ .Values.config.sslCertKey }}
+            value : {{ .Values.config.sdnrPort | quote }}
           {{ if .Values.config.transportpce.enabled }}
           - name: TRPCEURL
             value: {{ .Values.config.transportpce.transportpceUrl }}
@@ -89,11 +90,8 @@ spec:
             value: "{{ .Values.config.oauth.enabled | default "false" }}"
           - name: ENABLE_ODLUX_RBAC
             value: "{{ .Values.config.oauth.odluxRbac.enabled | default "false" }}"
-          volumeMounts:  {{ include "common.certInitializer.volumeMount" . | nindent 10 }}
-          - mountPath: /etc/localtime
-            name: localtime
-            readOnly: true
-
+          - name: SDNRWEBSOCKETPORT
+            value: "{{ .Values.sdnrWebsocketPort | default "8182" }}"
           resources: {{ include "common.resources" . | nindent 12 }}
       {{- if .Values.nodeSelector }}
       nodeSelector: {{ toYaml .Values.nodeSelector | nindent 8 }}
@@ -102,10 +100,4 @@ spec:
       affinity: {{ toYaml .Values.affinity | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
-      volumes: {{ include "common.certInitializer.volumes" . | nindent 6 }}
-      - name: localtime
-        hostPath:
-          path: /etc/localtime
-
-      imagePullSecrets:
-      - name: "{{ include "common.namespace" . }}-docker-registry-key"
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

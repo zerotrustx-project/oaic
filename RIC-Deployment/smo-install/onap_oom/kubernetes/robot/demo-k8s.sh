@@ -55,9 +55,6 @@ usage ()
     echo "       demo-k8s.sh <namespace> preload <vnf_name> <module_name>"
     echo "               - Preload data for VNF for the <module_name>"
     echo " "
-    echo "       demo-k8s.sh <namespace> appc <module_name>"
-    echo "               - provide APPC with vFW module mount point for closed loop"
-    echo " "
     echo "       demo-k8s.sh <namespace> init_robot [ <etc_hosts_prefix> ]"
     echo "               - Initialize robot after all ONAP VMs have started"
     echo " "
@@ -168,16 +165,6 @@ do
             VARIABLES="$VARIABLES -v MODULE_NAME:$1"
             shift
             ;;
-        appc)
-            TAG="APPCMountPointDemo"
-            shift
-            if [ $# -ne 1 ];then
-                    echo "Usage: demo-k8s.sh <namespace> appc <module_name>"
-                    exit
-                fi
-            VARIABLES="$VARIABLES -v MODULE_NAME:$1"
-            shift
-            ;;
         instantiateVFW)
             TAG="instantiateVFW"
             VARIABLES="$VARIABLES -v GLOBAL_BUILD_NUMBER:$$"
@@ -273,7 +260,7 @@ if [ $execscript ]; then
    done
 fi
 
-export GLOBAL_BUILD_NUMBER=$(kubectl --namespace $NAMESPACE exec  ${POD}  -- bash -c "ls -1q /share/logs/ | wc -l")
+export GLOBAL_BUILD_NUMBER=$(kubectl --namespace $NAMESPACE exec  ${POD}  -- sh -c "ls -1q /share/logs/ | wc -l")
 OUTPUT_FOLDER=$(printf %04d $GLOBAL_BUILD_NUMBER)_demo_$key
 DISPLAY_NUM=$(($GLOBAL_BUILD_NUMBER + 90))
 
@@ -295,6 +282,8 @@ if [ $dcaeRegistrySynch ]; then
      ./registry-initialize.sh -h dcaegen2-services-common -n $NAMESPACE -r $HELM_RELEASE
      ./registry-initialize.sh -h postgres -n $NAMESPACE -r $HELM_RELEASE
      ./registry-initialize.sh -h serviceAccount -n $NAMESPACE -r $HELM_RELEASE
+     ./registry-initialize.sh -h mongo -n $NAMESPACE -r $HELM_RELEASE
+     ./registry-initialize.sh -h common -n $NAMESPACE -r $HELM_RELEASE
    fi
    cd $CURRENT_DIR
 fi

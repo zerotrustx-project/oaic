@@ -18,67 +18,34 @@
 
 apiVersion: apps/v1
 kind: Deployment
-metadata:
-  name: {{ include "common.fullname" . }}
-  namespace: {{ include "common.namespace" . }}
-  labels:
-    app: {{ include "common.name" . }}
-    chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
-    release: {{ include "common.release" . }}
-    heritage: {{ .Release.Service }}
+metadata: {{- include "common.resourceMetadata" . | nindent 2 }}
 spec:
-  selector:
-    matchLabels:
-      app: {{ include "common.name" . }}
+  selector: {{- include "common.selectors" . | nindent 4 }}
   replicas: {{ .Values.replicaCount }}
   template:
-    metadata:
-      labels:
-        app: {{ include "common.name" . }}
-        release: {{ include "common.release" . }}
-      name: {{ include "common.fullname" . }}
+    metadata: {{- include "common.templateMetadata" . | nindent 6 }}
     spec:
-{{- if .Values.global.aafEnabled }}
-      initContainers: {{ include "common.certInitializer.initContainer" . | nindent 6 }}
-{{- end }}
       containers:
         - name: {{ include "common.name" . }}
           image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
           imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
-          ports:
-            - containerPort: {{ .Values.service.internalPort }}
+          ports: {{ include "common.containerPorts" . | nindent 12 }}
           # disable liveness probe when breakpoints set in debugger
           # so K8s doesn't restart unresponsive container
-          {{- if .Values.global.aafEnabled }}
-          command:
-          - sh
-          args:
-          - -c
-          - |
-            export $(grep '^c' {{ .Values.certInitializer.credsPath }}/mycreds.prop | xargs -0)
-            export JAVA_OPTS="-Djavax.net.ssl.trustStorePassword=$cadi_truststore_password \
-              -Dserver.ssl.key-store={{ .Values.certInitializer.credsPath }}/org.onap.nbi.p12 \
-              -Dserver.ssl.key-store-type=PKCS12 \
-              -Djavax.net.ssl.trustStore={{ .Values.certInitializer.credsPath }}/org.onap.nbi.trust.jks \
-              -Dserver.ssl.key-store-password=$cadi_keystore_password_p12  \
-              -Djavax.net.ssl.trustStoreType=jks\
-              -Djava.security.egd=file:/dev/./urandom -Dserver.port=8443"
-            exec java -XX:+UseContainerSupport $JAVA_OPTS -jar /opt/onap/app.jar
-          {{- end }}
           {{ if .Values.liveness.enabled }}
           livenessProbe:
             httpGet:
-              port: {{ .Values.liveness.port }}
+              port: {{ .Values.service.internalPort }}
               path: {{ .Values.liveness.path }}
-              scheme: HTTPS
+              scheme: HTTP
             initialDelaySeconds: {{ .Values.liveness.initialDelaySeconds }}
             periodSeconds: {{ .Values.liveness.periodSeconds }}
           {{ end }}
           readinessProbe:
             httpGet:
-              port: {{ .Values.readiness.port }}
+              port: {{ .Values.service.internalPort }}
               path: {{ .Values.readiness.path }}
-              scheme: HTTPS
+              scheme: HTTP
             initialDelaySeconds: {{ .Values.readiness.initialDelaySeconds }}
             periodSeconds: {{ .Values.readiness.periodSeconds }}
           env:
@@ -89,11 +56,11 @@ spec:
             - name: SPRING_DATASOURCE_PASSWORD
               {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "nbi-db-secret" "key" "password") | indent 14 }}
             - name: SPRING_DATA_MONGODB_HOST
-              value: {{ .Values.mongo.service.name }}.{{ include "common.namespace" . }}
+              value: {{ .Values.mongodb.service.nameOverride }}.{{ include "common.namespace" . }}
             - name: SPRING_DATA_MONGODB_PORT
-              value: "{{ .Values.mongo.service.internalPort }}"
+              value: "{{ .Values.mongodb.service.port }}"
             - name: SPRING_DATA_MONGODB_DATABASE
-              value: {{ .Values.mongo.config.dbName }}
+              value: {{ .Values.mongodb.config.dbName }}
             - name: ONAP_LCPCLOUDREGIONID
               value: {{ .Values.config.openStackRegion }}
             - name: ONAP_TENANTID
@@ -105,15 +72,15 @@ spec:
             - name: ONAP_K8SCLOUDOWNER
               value: {{ .Values.config.k8sCloudOwner }}
             - name: NBI_URL
-              value: "https://nbi.{{ include "common.namespace" . }}:8443/nbi/api/v4"
+              value: "http://nbi.{{ include "common.namespace" . }}:{{ .Values.service.internalPort }}/nbi/api/v4"
             - name: SDC_HOST
-              value: "https://sdc-be.{{ include "common.namespace" . }}:8443"
+              value: "http://sdc-be.{{ include "common.namespace" . }}:8080"
             - name: SDC_HEADER_ECOMPINSTANCEID
               value: {{ .Values.config.ecompInstanceId }}
             - name: SDC_HEADER_AUTHORIZATION
               value: {{ .Values.sdc_authorization }}
             - name: AAI_HOST
-              value: "https://aai.{{ include "common.namespace" . }}:8443"
+              value: "http://aai.{{ include "common.namespace" . }}:80"
             - name: AAI_HEADER_AUTHORIZATION
               value: {{ .Values.aai_authorization }}
             - name: SO_HOST
@@ -123,21 +90,16 @@ spec:
               value: {{ .Values.so_authorization }}
             {{- end }}
             - name: DMAAP_HOST
-              value: "https://message-router.{{ include "common.namespace" . }}:3905"
+              value: "http://message-router.{{ include "common.namespace" . }}:3904"
             - name: LOGGING_LEVEL_ORG_ONAP_NBI
               value: {{ .Values.config.loglevel }}
             - name: MSB_ENABLED
-              value: "true"
+              value: "{{ .Values.global.msbEnabled }}"
             - name: MSB_DISCOVERY_HOST
               value: "msb-discovery.{{ include "common.namespace" . }}"
             - name: MSB_DISCOVERY_PORT
               value: "10081"
-          volumeMounts: {{ include "common.certInitializer.volumeMount" . | nindent 12 }}
-            - mountPath: /etc/localtime
-              name: localtime
-              readOnly: true
-          resources:
-{{ include "common.resources" . | indent 12 }}
+          resources: {{ include "common.resources" . | nindent 12 }}
         {{- if .Values.nodeSelector }}
         nodeSelector:
 {{ toYaml .Values.nodeSelector | indent 10 }}
@@ -147,9 +109,4 @@ spec:
 {{ toYaml .Values.affinity | indent 10 }}
         {{- end }}
       serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
-      volumes: {{ include "common.certInitializer.volumes" . | nindent 8 }}
-        - name: localtime
-          hostPath:
-            path: /etc/localtime
-      imagePullSecrets:
-      - name: "{{ include "common.namespace" . }}-docker-registry-key"
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

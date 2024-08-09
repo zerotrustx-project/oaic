@@ -16,31 +16,19 @@
 
 apiVersion: apps/v1
 kind: Deployment
-metadata:
-  name: {{ include "common.fullname" . }}
-  namespace: {{ include "common.namespace" . }}
-  labels:
-    app: {{ include "common.name" . }}
-    chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
-    release: {{ include "common.release" . }}
-    heritage: {{ .Release.Service }}
+metadata: {{- include "common.resourceMetadata" . | nindent 2 }}
 spec:
-  selector:
-    matchLabels:
-      app: {{ include "common.name" . }}
+  selector: {{- include "common.selectors" . | nindent 4 }}
   replicas: {{ .Values.replicaCount }}
   template:
-    metadata:
-      labels:
-        app: {{ include "common.name" . }}
-        release: {{ include "common.release" . }}
+    metadata: {{- include "common.templateMetadata" . | nindent 6 }}
     spec:
       initContainers:
       - command:
         - /app/ready.py
         args:
-        - --container-name
-        - cds-blueprints-processor
+        - --service-name
+        - cds-blueprints-processor-http
         env:
         - name: NAMESPACE
           valueFrom:
@@ -51,39 +39,41 @@ spec:
         - name: PROMETHEUS_METRICS_ENABLED
           value: {{ .Values.metrics.serviceMonitor.enabled | quote }}
         - name: PROMETHEUS_PORT
-          value: {{ .Values.service.metrics.internalPort | quote }}
+          value: {{ .Values.metrics.serviceMonitor.internalPort | quote }}
         {{ end }}
         image: {{ include "repositoryGenerator.image.readiness" . }}
         imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
         name: {{ include "common.name" . }}-readiness
+        resources:
+          limits:
+            cpu: "100m"
+            memory: "500Mi"
+          requests:
+            cpu: "3m"
+            memory: "20Mi"
       containers:
         - name: {{ include "common.name" . }}
           image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
           imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
-          ports:
-          - containerPort: {{ .Values.service.grpc.internalPort }}
+          ports: {{ include "common.containerPorts" . | nindent 12  }}
           {{ if .Values.liveness.enabled }}
           livenessProbe:
             tcpSocket:
-              port: {{ .Values.service.grpc.internalPort }}
+              port: {{ .Values.service.internalPort }}
             initialDelaySeconds: {{ .Values.liveness.initialDelaySeconds }}
             periodSeconds: {{ .Values.liveness.periodSeconds }}
             timeoutSeconds: {{ .Values.liveness.timeoutSeconds }}
           {{ end }}
           readinessProbe:
             tcpSocket:
-              port: {{ .Values.service.grpc.internalPort }}
+              port: {{ .Values.service.internalPort }}
             initialDelaySeconds: {{ .Values.readiness.initialDelaySeconds }}
             periodSeconds: {{ .Values.readiness.periodSeconds }}
             timeoutSeconds: {{ .Values.readiness.timeoutSeconds }}
           volumeMounts:
-          - mountPath: /etc/localtime
-            name: localtime
-            readOnly: true
           - mountPath: {{ .Values.persistence.deployedBlueprint }}
             name: {{ include "common.fullname" . }}-blueprints
-          resources:
-{{ include "common.resources" . | indent 12 }}
+          resources: {{ include "common.resources" . | nindent 12 }}
         {{- if .Values.nodeSelector }}
         nodeSelector:
 {{ toYaml .Values.nodeSelector | indent 10 }}
@@ -94,9 +84,6 @@ spec:
         {{- end }}
       serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
       volumes:
-        - name: localtime
-          hostPath:
-            path: /etc/localtime
         - name: {{ include "common.fullname" . }}-blueprints
         {{- if .Values.persistence.enabled }}
           persistentVolumeClaim:
@@ -104,5 +91,4 @@ spec:
         {{- else }}
           emptyDir: {}
         {{- end }}
-      imagePullSecrets:
-      - name: "{{ include "common.namespace" . }}-docker-registry-key"
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

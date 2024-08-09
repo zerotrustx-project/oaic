@@ -1,5 +1,8 @@
 ## **Quick Start Guide**
 
+> **WARNING**: This README is no longer maintained and will be deprecated.
+> Please refer to the official OOM guide here - [OOM Guide](https://docs.onap.org/projects/onap-oom/en/latest/sections/oom_project_description.html)
+
 
 This is a quick start guide describing how to deploy ONAP on Kubernetes using Helm.
 
@@ -51,7 +54,6 @@ Step 5. Display the charts that are available to be deployed:
 ```
 > helm search -l
 NAME                    VERSION    DESCRIPTION
-local/appc              2.0.0      Application Controller
 local/clamp             2.0.0      ONAP Clamp
 local/onap              2.0.0      Open Network Automation Platform (ONAP)
 local/robot             2.0.0      A helm Chart for kubernetes-ONAP Robot

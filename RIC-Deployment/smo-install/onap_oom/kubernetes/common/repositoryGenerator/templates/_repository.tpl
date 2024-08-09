@@ -2,6 +2,7 @@
 # Copyright © 2017 Amdocs, Bell Canada
 # Copyright © 2021 AT&T
 # Modifications Copyright (C) 2021 Nordix Foundation.
+# Modifications Copyright © 2024 Deutsche Telekom
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -56,6 +57,16 @@
 */}}
 {{- define "repositoryGenerator.elasticRepository" -}}
   {{- include "repositoryGenerator._repositoryHelper" (merge (dict "repoName" "elasticRepository") .) }}
+{{- end -}}
+
+{{/*
+  Resolve the name of the quay.io Repository image repository.
+
+  - .Values.global.quayRepository  : default image quayRepository for all images using quay repository
+  - .Values.quayRepositoryOverride : override global quayRepository repository on a per chart basis
+*/}}
+{{- define "repositoryGenerator.quayRepository" -}}
+  {{- include "repositoryGenerator._repositoryHelper" (merge (dict "repoName" "quayRepository") .) }}
 {{- end -}}
 
 {{/*
@@ -129,6 +140,10 @@
   {{- include "repositoryGenerator.image._helper" (merge (dict "image" "nginxImage") .) }}
 {{- end -}}
 
+{{- define "repositoryGenerator.image.mongodbImage" -}}
+  {{- include "repositoryGenerator.image._helper" (merge (dict "image" "mongodbImage") .) }}
+{{- end -}}
+
 {{- define "repositoryGenerator.image.postgres" -}}
   {{- include "repositoryGenerator.image._helper" (merge (dict "image" "postgresImage") .) }}
 {{- end -}}
@@ -137,8 +152,8 @@
   {{- include "repositoryGenerator.image._helper" (merge (dict "image" "readinessImage") .) }}
 {{- end -}}
 
-{{- define "repositoryGenerator.image.dbcClient" -}}
-  {{- include "repositoryGenerator.image._helper" (merge (dict "image" "dbcClientImage") .) }}
+{{- define "repositoryGenerator.image.drProvClient" -}}
+  {{- include "repositoryGenerator.image._helper" (merge (dict "image" "drProvClientImage") .) }}
 {{- end -}}
 
 {{- define "repositoryGenerator.image.quitQuit" -}}
@@ -154,6 +169,7 @@
     mail: email (optional)
   You can also set the same things for dockerHub, elastic and googleK8s if
   needed.
+  if not needed, set global.repositoryCred.user to empty value.
 */}}
 {{- define "repositoryGenerator.secret" -}}
   {{- $dot := default . .dot -}}
@@ -164,9 +180,11 @@
   {{- if $subchartDot.Values.global.repositoryCred }}
   {{-   $repo := $subchartDot.Values.global.repository }}
   {{-   $cred := $subchartDot.Values.global.repositoryCred }}
-  {{-   $mail := default "@" $cred.mail }}
-  {{-   $auth := printf "%s:%s" $cred.user $cred.password | b64enc }}
-  {{-   $repoCreds = printf "\"%s\": {\"username\":\"%s\",\"password\":\"%s\",\"email\":\"%s\",\"auth\":\"%s\"}" $repo $cred.user $cred.password $mail $auth }}
+  {{-   if $cred.user }}
+  {{-     $mail := default "@" $cred.mail }}
+  {{-     $auth := printf "%s:%s" $cred.user $cred.password | b64enc }}
+  {{-     $repoCreds = printf "\"%s\": {\"username\":\"%s\",\"password\":\"%s\",\"email\":\"%s\",\"auth\":\"%s\"}" $repo $cred.user $cred.password $mail $auth }}
+  {{-   end }}
   {{- end }}
   {{- if $subchartDot.Values.global.dockerHubRepositoryCred }}
   {{-   $dhRepo := $subchartDot.Values.global.dockerHubRepository }}

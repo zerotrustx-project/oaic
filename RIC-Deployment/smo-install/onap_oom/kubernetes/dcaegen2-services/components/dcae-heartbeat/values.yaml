@@ -1,6 +1,7 @@
 # ================================ LICENSE_START =============================
 # ============================================================================
-# Copyright (c) 2021 AT&T Intellectual Property. All rights reserved.
+# Copyright (c) 2021-2023 AT&T Intellectual Property. All rights reserved.
+# Copyright (c) 2022-2023 J. F. Lucas. All rights reserved.
 # ============================================================================
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -34,11 +35,6 @@ filebeatConfig:
 # Secrets Configuration.
 #################################################################
 secrets:
-  - uid: &aafCredsUID aafcreds
-    type: basicAuth
-    login: '{{ .Values.aafCreds.identity }}'
-    password: '{{ .Values.aafCreds.password }}'
-    passwordPolicy: required
   - uid: &pgUserCredsSecretUid pg-user-creds
     name: &pgUserCredsSecretName '{{ include "common.release" . }}-heartbeat-pg-user-creds'
     type: basicAuth
@@ -48,16 +44,10 @@ secrets:
     passwordPolicy: generate
 
 #################################################################
-# InitContainer Images.
-#################################################################
-tlsImage: onap/org.onap.dcaegen2.deployments.tls-init-container:2.1.0
-consulLoaderImage: onap/org.onap.dcaegen2.deployments.consul-loader-container:1.1.1
-
-#################################################################
 # Application Configuration Defaults.
 #################################################################
 # Application Image
-image: onap/org.onap.dcaegen2.services.heartbeat:2.3.1
+image: onap/org.onap.dcaegen2.services.heartbeat:2.6.1
 pullPolicy: Always
 
 # Log directory where logging sidecar should look for log files
@@ -66,22 +56,6 @@ pullPolicy: Always
 log:
   path: /var/log/ONAP/dcaegen2/services/heartbeat
 logConfigMapNamePrefix: '{{ include "common.fullname" . }}'
-
-# Directory where TLS certs should be stored
-# if absent, no certs will be retrieved and stored
-certDirectory: /opt/app/heartbeat/etc/certs
-
-# TLS role -- set to true if microservice acts as server
-# If true, an init container will retrieve a server cert
-# and key from AAF and mount them in certDirectory.
-tlsServer: true
-
-# Dependencies
-readinessCheck:
-  wait_for:
-    - dcae-config-binding-service
-    - aaf-cm
-    - &postgresName dcae-heartbeat-postgres
 
 # Probe Configuration
 readiness:
@@ -101,18 +75,14 @@ service:
       port: 10002
       port_protocol: http
 
-# AAF Credentials
-aafCreds:
-  identity: dcae@dcae.onap.org
-  password: demo123456!
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: message-router-read
+    authorizedPrincipalsPostgres:
+      - serviceAccount: dcae-heartbeat-read
 
 credentials:
-- name: AAF_IDENTITY
-  uid: *aafCredsUID
-  key: login
-- name: AAF_PASSWORD
-  uid: *aafCredsUID
-  key: password
 - name: HEARTBEAT_PG_USERNAME
   uid: *pgUserCredsSecretUid
   key: login
@@ -160,25 +130,25 @@ flavor: small
 resources:
   small:
     limits:
-      cpu: 1
-      memory: 1Gi
+      cpu: "2"
+      memory: "1Gi"
     requests:
-      cpu: 1
-      memory: 1Gi
+      cpu: "1"
+      memory: "1Gi"
   large:
     limits:
-      cpu: 2
-      memory: 2Gi
+      cpu: "4"
+      memory: "2Gi"
     requests:
-      cpu: 2
-      memory: 2Gi
+      cpu: "2"
+      memory: "2Gi"
   unlimited: {}
 
 #################################################################
 # Application configuration Overriding Defaults in the Postgres.
 #################################################################
 postgres:
-  nameOverride: *postgresName
+  nameOverride: &postgresName dcae-heartbeat-postgres
   service:
     name: *postgresName
     name2: dcae-heartbeat-pg-primary
@@ -194,6 +164,13 @@ postgres:
     pgUserName: heartbeat
     pgDatabase: heartbeat
     pgUserExternalSecret: *pgUserCredsSecretName
+
+# Dependencies
+readinessCheck:
+  wait_for:
+    services:
+      - '{{ .Values.postgres.service.name2 }}'
+      - message-router
 
 #Pods Service Account
 serviceAccount:

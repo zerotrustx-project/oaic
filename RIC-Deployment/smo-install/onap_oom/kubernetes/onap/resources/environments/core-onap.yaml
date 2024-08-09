@@ -16,7 +16,7 @@
 # This override file is used to deploy a core configuration. It is based on
 # minimal-onap.yaml and Orange accomplishments [1][2][3].
 # It includes the following components:
-# AAI, DMAAP, SDC, SDNC, SO (+ Cassandra)
+# AAI, DMAAP Message Router, SDC, SDNC, SO (+ Cassandra), STRIMZI Kafka
 #
 # Minimal resources are also reviewed for the various containers
 # AAI: no override => to be fixed
@@ -52,24 +52,12 @@ aai:
       replicas: 1
   aai-cassandra:
     replicaCount: 1
-aaf:
-  enabled: false
-appc:
-  enabled: false
 cassandra:
   enabled: true
   replicaCount: 3
-clamp:
-  enabled: false
 cli:
   enabled: false
-consul:
-  enabled: false
-contrib:
-  enabled: false
 cps:
-  enabled: false
-dcaegen2:
   enabled: false
 dcaegen2-services:
   enabled: false
@@ -77,8 +65,12 @@ holmes:
   enabled: false
 dmaap:
   enabled: true
-log:
-  enabled: false
+  message-router:
+    enabled: true
+  dmaap-dr-prov:
+    enabled: false
+  dmaap-dr-node:
+    enabled: false
 mariadb-galera:
   enabled: true
 msb:
@@ -91,9 +83,7 @@ oof:
   enabled: false
 policy:
   enabled: false
-pomba:
-  enabled: false
-portal:
+portal-ng:
   enabled: false
 robot:
   enabled: false
@@ -106,19 +96,17 @@ sdc:
     resources:
       small:
         limits:
-          cpu: 1
-          memory: 2Gi
+          cpu: "1"
+          memory: "2Gi"
         requests:
-          cpu: 10m
-          memory: 500Mi
+          cpu: "10m"
+          memory: "500Mi"
   sdc-cs:
     config:
       maxHeapSize: "512M"
       heapNewSize: "256M"
 sdnc:
   enabled: true
-sniro-emulator:
-  enabled: false
 so:
   enabled: true
   config:
@@ -128,9 +116,17 @@ so:
     openStackKeyStoneUrl: "$OPENSTACK_KEYSTONE_URL"
     openStackServiceTenantName: "$OPENSTACK_TENANT_NAME"
     openStackEncryptedPasswordHere: "$OPENSTACK_ENCRYPTED_PASSWORD"
+strimzi:
+  enabled: true
+  replicaCount: 2
+  persistence:
+    kafka:
+      size: 1Gi
+    zookeeper:
+      size: 500Mbi
+  strimzi-kafka-bridge:
+    enabled: false
 uui:
-  enabled: false
-vid:
   enabled: false
 vfc:
   enabled: false

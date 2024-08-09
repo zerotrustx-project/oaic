@@ -18,9 +18,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata: {{- include "common.resourceMetadata" . | nindent 2 }}
 spec:
-  selector:
-    matchLabels:
-      app: {{ include "common.name" . }}
   replicas: {{ .Values.replicaCount }}
   selector: {{- include "common.selectors" . | nindent 4 }}
   template:
@@ -56,14 +53,12 @@ spec:
       - command:
         - /app/ready.py
         args:
-        - --container-name
+        - --service-name
         - {{ include "common.mariadbService" . }}
-        - --container-name
+        - --service-name
         - {{ .Values.config.sdncChartName }}
-        - --container-name
+        - --service-name
         - {{ .Values.config.sdcbeChartName }}
-        - --container-name
-        - {{ .Values.config.msgRouterContainerName }}
         env:
         - name: NAMESPACE
           valueFrom:
@@ -73,6 +68,13 @@ spec:
         image: {{ include "repositoryGenerator.image.readiness" . }}
         imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
         name: {{ include "common.name" . }}-readiness
+        resources:
+          limits:
+            cpu: "100m"
+            memory: "500Mi"
+          requests:
+            cpu: "3m"
+            memory: "20Mi"
       containers:
       - command:
         - /opt/onap/sdnc/ueb-listener/bin/start-ueb-listener.sh
@@ -86,17 +88,23 @@ spec:
           value: "{{ .Values.config.configDir }}"
         - name: LOG4J_FORMAT_MSG_NO_LOOKUPS
           value: "true"
+        - name: SASL_JAAS_CONFIG
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "common.name" . }}-ku
+              key: sasl.jaas.config
         volumeMounts:
-        - mountPath: /etc/localtime
-          name: localtime
-          readOnly: true
         - mountPath: {{ .Values.config.configDir }}/dblib.properties
           name: properties
           subPath: dblib.properties
         - mountPath: {{ .Values.config.configDir }}/ueb-listener.properties
           name: properties
           subPath: ueb-listener.properties
+        - mountPath: {{ .Values.config.configDir }}/log4j2.xml
+          name: properties
+          subPath: log4j2.xml
         resources: {{ include "common.resources" . | nindent 10 }}
+        ports: {{ include "common.containerPorts" . | nindent 10  }}
       {{- if .Values.nodeSelector }}
       nodeSelector: {{ toYaml .Values.nodeSelector | nindent 8 }}
       {{- end }}
@@ -105,9 +113,6 @@ spec:
       {{- end }}
       serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
       volumes:
-        - name: localtime
-          hostPath:
-            path: /etc/localtime
         - name: config-input
           configMap:
             name: {{ include "common.fullname" . }}
@@ -115,5 +120,4 @@ spec:
         - name: properties
           emptyDir:
             medium: Memory
-      imagePullSecrets:
-      - name: "{{ include "common.namespace" . }}-docker-registry-key"
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

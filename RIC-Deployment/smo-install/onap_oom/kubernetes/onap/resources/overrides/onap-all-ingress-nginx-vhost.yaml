@@ -15,48 +15,109 @@
 ###################################################################
 # This override file enables helm charts for all ONAP applications.
 ###################################################################
+#ingress virtualhost based configuration
+global:
+  ingress:
+    enabled: true
+    enable_all: true
+    # Provider: ingress, istio, gw-api
+    provider: ingress
+    # Ingress class (only for provider "ingress"): e.g. nginx, traefik
+    ingressClass: nginx
+    # Ingress Selector (only for provider "istio") to match with the
+    # ingress pod label "istio=ingress"
+    ingressSelector: ingress
+    # optional: common used Gateway (for Istio, GW-API) and listener names
+    commonGateway:
+      name: ""
+      httpListener: ""
+      httpsListener: ""
+
 cassandra:
   enabled: true
 mariadb-galera:
   enabled: true
-
-aaf:
+postgres:
+  enabled: true
+authentication:
   enabled: true
 aai:
   enabled: true
-appc:
-  enabled: false
 cds:
   enabled: true
-clamp:
-  enabled: true
 cli:
-  enabled: true
-consul:
-  enabled: true
-contrib:
-  enabled: true
+  enabled: false
 cps:
   enabled: true
 dcaegen2:
   enabled: true
 dcaegen2-services:
   enabled: true
+  dcae-datafile-collector:
+    enabled: false
+  dcae-datalake-admin-ui:
+    enabled: true
+  dcae-datalake-des:
+    enabled: true
+  dcae-datalake-feeder:
+    enabled: true
+  dcae-heartbeat:
+    enabled: false
+  dcae-hv-ves-collector:
+    enabled: true
+  dcae-kpi-ms:
+    enabled: false
+  dcae-ms-healthcheck:
+    enabled: true
+  dcae-pm-mapper:
+    enabled: false
+  dcae-pmsh:
+    enabled: false
+  dcae-prh:
+    enabled: true
+  dcae-restconf-collector:
+    enabled: false
+  dcae-slice-analysis-ms:
+    enabled: false
+  dcae-snmptrap-collector:
+    enabled: false
+  dcae-son-handler:
+    enabled: false
+  dcae-tcagen2:
+    enabled: false
+  dcae-ves-collector:
+    enabled: true
+    applicationConfig:
+      auth.method: "noAuth"
+  dcae-ves-mapper:
+    enabled: false
+  dcae-ves-openapi-manager:
+    enabled: true
 holmes:
   enabled: true
 dmaap:
   enabled: true
+  message-router:
+    enabled: true
+  dmaap-dr-prov:
+    enabled: true
+  dmaap-dr-node:
+    enabled: true
 oof:
-  enabled: true
+  enabled: false
 msb:
-  enabled: true
+  enabled: false
 multicloud:
   enabled: true
 nbi:
+  enabled: false
+platform:
   enabled: true
+  cmpv2-cert-service:
+    enabled: false
 policy:
   enabled: true
-portal:
+portal-ng:
   enabled: true
 robot:
   enabled: true
@@ -64,28 +125,32 @@ sdc:
   enabled: true
 sdnc:
   enabled: true
+  network-name-gen:
+    enabled: true
+  dgbuilder:
+    enabled: true
+  dmaap-listener:
+    enabled: false
+  ueb-listener:
+    enabled: true
+  sdnc-ansible-server:
+    enabled: true
+  sdnc-web:
+    enabled: true
 so:
   enabled: true
-  ingress:
+strimzi:
+  enabled: true
+  strimzi-kafka-bridge:
     enabled: true
-  so-monitoring:
-    ingress:
-      enabled: true
-  so-vnfm-adapter:
-    ingress:
-      enabled: true
 uui:
   enabled: true
 vfc:
-  enabled: true
-vid:
-  enabled: true
-  ingress:
-    enabled: true
+  enabled: false
 vnfsdk:
+  enabled: false
+modeling:
+  enabled: false
+a1policymanagement:
   enabled: true
-
-#ingress virtualhost based configuration
-global:
-  ingress:
-    enabled: true
+                                                                                                                                                                      55,15         39%

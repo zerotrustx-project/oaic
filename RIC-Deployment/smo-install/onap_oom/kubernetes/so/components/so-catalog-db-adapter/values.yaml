@@ -19,16 +19,10 @@ global:
   nodePortPrefixExt: 304
   persistence:
     mountPath: /dockerdata-nfs
-  security:
-    aaf:
-      enabled: false
-  aaf:
-    auth:
-      header: Basic c29Ac28ub25hcC5vcmc6ZGVtbzEyMzQ1Ngo=
   app:
     msoKey: 07a7159d3bf51a0e53be7a8f89699be7
   mariadbGalera:
-    serviceName: mariadb-galera
+    service: mariadb-galera
     servicePort: '3306'
 
 readinessCheck:
@@ -62,8 +56,17 @@ secrets:
 #################################################################
 # Application configuration defaults.
 #################################################################
-image: onap/so/catalog-db-adapter:1.9.2
+image: onap/so/catalog-db-adapter:1.12.2
 pullPolicy: Always
+
+# Local mariadb galera instance default name
+mariadb-galera:
+  nameOverride: so-mariadb-galera
+  service:
+    internalPort: 3306
+  mariadbOperator:
+    galera:
+      enabled: false
 
 db:
   userName: so_user
@@ -84,25 +87,19 @@ containerPort: &containerPort 8082
 logPath: ./logs/catdb/
 app: catalog-db-adapter
 service:
-    type: ClusterIP
-    internalPort: *containerPort
-    externalPort: *containerPort
-    portName: so-catdb-port
+  type: ClusterIP
+  ports:
+  - port: *containerPort
+    name: http
 updateStrategy:
-    type: RollingUpdate
-    maxUnavailable: 1
-    maxSurge: 1
+  type: RollingUpdate
+  maxUnavailable: 1
+  maxSurge: 1
 
 #################################################################
-# soHelper part
+# soHelpers part
 #################################################################
 soHelpers:
-  nameOverride: so-catalogdb-cert-init
-  certInitializer:
-    nameOverride: so-catalogdb-cert-init
-    credsPath: /opt/app/osaaf/local
-  cadi:
-    apiEnforcement: org.onap.so.catalogDbAdapterPerm
   containerPort: *containerPort
 
 # Resource Limit flavor -By Default using small
@@ -111,30 +108,39 @@ flavor: small
 resources:
   small:
     limits:
-      memory: 4Gi
-      cpu: 2000m
+      cpu: "1"
+      memory: "1.5Gi"
     requests:
-      memory: 1Gi
-      cpu: 500m
+      cpu: "0.5"
+      memory: "1.5Gi"
   large:
     limits:
-      memory: 8Gi
-      cpu: 4000m
+      cpu: "2"
+      memory: "3Gi"
     requests:
-      memory: 2Gi
-      cpu: 1000m
+      cpu: "1"
+      memory: "3Gi"
   unlimited: {}
 livenessProbe:
-    path: /manage/health
-    port: 8082
-    scheme: HTTP
-    initialDelaySeconds: 600
-    periodSeconds: 60
-    timeoutSeconds: 10
-    successThreshold: 1
-    failureThreshold: 3
+  path: /manage/health
+  port: 8082
+  scheme: HTTP
+  initialDelaySeconds: 600
+  periodSeconds: 60
+  timeoutSeconds: 10
+  successThreshold: 1
+  failureThreshold: 3
 ingress:
   enabled: false
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: robot-read
+      - serviceAccount: so-bpmn-infra-read
+      - serviceAccount: so-openstack-adapter-read
+      - serviceAccount: so-read
+      - serviceAccount: so-sdc-controller-read
+      - serviceAccount: so-sdnc-adapter-read
 config:
   openStackUserName: "vnf_user"
   openStackRegion: "RegionOne"
@@ -154,4 +160,3 @@ serviceAccount:
   nameOverride: so-catalog-db-adapter
   roles:
     - read
-

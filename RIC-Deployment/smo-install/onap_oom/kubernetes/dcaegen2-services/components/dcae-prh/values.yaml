@@ -1,6 +1,8 @@
 #============LICENSE_START========================================================
 # ================================================================================
-# Copyright (c) 2021 J. F. Lucas. All rights reserved.
+# Copyright (c) 2021-2023 J. F. Lucas. All rights reserved.
+# Copyright (c) 2022 Nokia.  All rights reserved.
+# Copyright (c) 2024 Deutsche Telekom Intellectual Property. All rights reserved.
 # ================================================================================
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,16 +33,10 @@ filebeatConfig:
   logstashPort: 5044
 
 #################################################################
-# initContainer images.
-#################################################################
-tlsImage: onap/org.onap.dcaegen2.deployments.tls-init-container:2.1.0
-consulLoaderImage: onap/org.onap.dcaegen2.deployments.consul-loader-container:1.1.1
-
-#################################################################
 # Application configuration defaults.
 #################################################################
 # application image
-image: onap/org.onap.dcaegen2.services.prh.prh-app-server:1.7.1
+image: onap/org.onap.dcaegen2.services.prh.prh-app-server:1.10.1
 pullPolicy: Always
 
 # log directory where logging sidecar should look for log files
@@ -50,27 +46,12 @@ log:
   path: /opt/app/prh/logs
 logConfigMapNamePrefix: '{{ include "common.fullname" . }}'
 
-# directory where TLS certs should be stored
-# if absent, no certs will be retrieved and stored
-certDirectory: /opt/app/prh/etc/cert
-
-# TLS role -- set to true if microservice acts as server
-# If true, an init container will retrieve a server cert
-# and key from AAF and mount them in certDirectory.
-tlsServer: true
-
 secrets:
   - uid: &aaiCredsUID aaicreds
     type: basicAuth
     login: '{{ .Values.aaiCreds.user }}'
     password: '{{ .Values.aaiCreds.password }}'
     passwordPolicy: required
-
-# dependencies
-readinessCheck:
-  wait_for:
-    - dcae-config-binding-service
-    - aaf-cm
 
 # probe configuration
 readiness:
@@ -88,6 +69,11 @@ service:
     - port: 8100
       name: http
 
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: message-router-read
+
 aaiCreds:
   user: AAI
   password: AAI
@@ -100,10 +86,6 @@ credentials:
   uid: *aaiCredsUID
   key: password
 
-customEnvVars:
-- name: AUTH_HDR
-  value: "Basic `echo -n ${AAI_USER}:${AAI_PASSWORD} | base64`"
-
 # initial application configuration
 applicationConfig:
   dmaap.dmaapConsumerConfiguration.dmaapContentType: "application/json"
@@ -112,11 +94,11 @@ applicationConfig:
   dmaap.dmaapConsumerConfiguration.timeoutMs: -1
   dmaap.dmaapProducerConfiguration.dmaapContentType: "application/json"
   dmaap.dmaapUpdateProducerConfiguration.dmaapContentType: "application/json"
-  aai.aaiClientConfiguration.pnfUrl: https://aai.onap.svc.cluster.local:8443/aai/v23/network/pnfs/pnf
-  aai.aaiClientConfiguration.baseUrl: https://aai.onap.svc.cluster.local:8443/aai/v23
-  aai.aaiClientConfiguration.aaiHost: aai.onap.svc.cluster.local
-  aai.aaiClientConfiguration.aaiHostPortNumber: 8443
-  aai.aaiClientConfiguration.aaiProtocol: "https"
+  aai.aaiClientConfiguration.pnfUrl: http://aai-internal.onap.svc.cluster.local:80/aai/v23/network/pnfs/pnf
+  aai.aaiClientConfiguration.baseUrl: http://aai-internal.onap.svc.cluster.local:80/aai/v23
+  aai.aaiClientConfiguration.aaiHost: aai-internal.onap.svc.cluster.local
+  aai.aaiClientConfiguration.aaiHostPortNumber: 80
+  aai.aaiClientConfiguration.aaiProtocol: "http"
   aai.aaiClientConfiguration.aaiUserName: ${AAI_USER}
   aai.aaiClientConfiguration.aaiUserPassword: ${AAI_PASSWORD}
   aai.aaiClientConfiguration.aaiIgnoreSslCertificateErrors: true
@@ -128,7 +110,7 @@ applicationConfig:
       X-TransactionId: "9999"
       Accept: "application/json"
       Real-Time: "true"
-      Authorization: $AUTH_HDR
+      Authorization: ${AUTH_HDR}
   security.trustStorePath: "/opt/app/prh/etc/cert/trust.jks"
   security.trustStorePasswordPath: "/opt/app/prh/etc/cert/trust.pass"
   security.keyStorePath: "/opt/app/prh/etc/cert/cert.jks"
@@ -152,6 +134,43 @@ applicationConfig:
 
 applicationEnv:
   CBS_CLIENT_CONFIG_PATH: '/app-config-input/application_config.yaml'
+  AUTH_HDR: '{{ printf "Basic %s" (print .Values.aaiCreds.user ":" .Values.aaiCreds.password | b64enc) }}'
+  BOOTSTRAP_SERVERS: '{{ include "common.release" . }}-strimzi-kafka-bootstrap:9092'
+  JAAS_CONFIG:
+    externalSecret: true
+    externalSecretUid: '{{ include "common.name" . }}-ku'
+    key: sasl.jaas.config
+
+# Strimzi Kafka User config
+kafkaUser:
+  acls:
+    - name: OpenDCAE-c12
+      type: group
+      patternType: literal
+      operations: [Read]
+    - name: \"*\"
+      type: topic
+      patternType: literal
+      operations: [DescribeConfigs]
+    - name: unauthenticated.VES_PNFREG_OUTPUT
+      type: topic
+      patternType: literal
+      operations: [Read]
+    - name: unauthenticated.PNF_READY
+      type: topic
+      patternType: literal
+      operations: [Write]
+    - name: unauthenticated.PNF_UPDATE
+      type: topic
+      patternType: literal
+      operations: [Write]
+
+# Strimzi Kafka Topics
+kafkaTopic:
+  - name: unauthenticated.PNF_READY
+    strimziTopicName: unauthenticated.pnf-ready
+  - name: unauthenticated.PNF_UPDATE
+    strimziTopicName: unauthenticated.pnf-update
 
 # Resource Limit flavor -By Default using small
 flavor: small
@@ -159,18 +178,18 @@ flavor: small
 resources:
   small:
     limits:
-      cpu: 2
-      memory: 2Gi
+      cpu: "1"
+      memory: "3Gi"
     requests:
-      cpu: 1
-      memory: 1Gi
+      cpu: "0.5"
+      memory: "3Gi"
   large:
     limits:
-      cpu: 4
-      memory: 4Gi
+      cpu: "2"
+      memory: "6Gi"
     requests:
-      cpu: 2
-      memory: 2Gi
+      cpu: "1"
+      memory: "6Gi"
   unlimited: {}
 
 #Pods Service Account

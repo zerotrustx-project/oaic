@@ -1,5 +1,6 @@
 # Copyright © 2017 Amdocs, Bell Canada
 # Modifications Copyright © 2018 AT&T, ZTE
+# Modifications Copyright © 2022 Nordix Foundation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +19,6 @@
 #################################################################
 global:
   nodePortPrefix: 302
-  aafEnabled: true
   sdc_cassandra:
     #This flag allows SDC to instantiate its own cluster, serviceName
     #should be sdc-cs if this flag is enabled
@@ -30,13 +30,17 @@ global:
     replicaCount: 3
     clusterName: cassandra
     dataCenter: Pod
+  # Global Strimzi kafka config overridden
+  # from parent values.yaml
+  kafka:
+    useKafka: overridden-from-parent-values-yaml
 
 #################################################################
 # Application configuration defaults.
 #################################################################
 # application image
-image: onap/sdc-backend-all-plugins:1.10.1
-backendInitImage: onap/sdc-backend-init:1.10.1
+image: onap/sdc-backend-all-plugins:1.13.6
+backendInitImage: onap/sdc-backend-init:1.13.6
 
 pullPolicy: Always
 
@@ -45,27 +49,7 @@ debugEnabled: false
 
 #environment file
 env:
-  name: AUTO
-
-certInitializer:
-  nameOverride: sdc-be-cert-init
-  aafDeployFqi: deployer@people.osaaf.org
-  aafDeployPass: demo123456!
-  fqdn: sdc
-  fqi: sdc@sdc.onap.org
-  public_fqdn: sdc.onap.org
-  cadi_longitude: "0.0"
-  cadi_latitude: "0.0"
-  app_ns: org.osaaf.aaf
-  credsPath: /opt/app/osaaf/local
-  addconfig: true
-  keystoreFile: "org.onap.sdc.p12"
-  truststoreFile: "org.onap.sdc.trust.jks"
-  permission_user: 352070
-  permission_group: 35953
-  aaf_add_config: |
-    echo "cadi_keystore_password_p12=$cadi_keystore_password_p12" > {{ .Values.credsPath }}/mycreds.prop
-    echo "cadi_truststore_password=$cadi_truststore_password" >> {{ .Values.credsPath }}/mycreds.prop
+  name: &env AUTO
 
 #################################################################
 # SDC Config part
@@ -73,6 +57,18 @@ certInitializer:
 config:
   javaOptions: "-Xmx1536m -Xms1536m"
   cassandraSslEnabled: "false"
+
+kafkaUser:
+  acls:
+    - name: sdc
+      suffix: *env
+      type: group
+      operations: [Read]
+    - name: SDC-DISTR
+      type: topic
+      patternType: prefix
+      operations: [Read, Write]
+
 
 # default number of instances
 replicaCount: 1
@@ -109,38 +105,49 @@ startup:
 service:
   type: NodePort
   name: sdc-be
-  both_tls_and_plain: true
   internalPort: 8080
-  msb:
-    - port: 8443
-      url: "/sdc/v1"
-      version: "v1"
-      protocol: "REST"
-      visualRange: "1"
-      serviceName: sdc
-      enable_ssl: true
-    - port: 8080
-      url: "/sdc/v1"
-      version: "v1"
-      protocol: "REST"
-      visualRange: "1"
-      serviceName: sdc-deprecated
   ports:
     - name: tcp-api
-      port: 8443
-      plain_port: 8080
+      port: 8080
       port_protocol: http
       nodePort: '04'
+  annotations:
+    msb.onap.org/service-info: |
+      {{ if .Values.global.msbEnabled -}}[
+        {
+          "serviceName": "sdc-be",
+          "version": "v1",
+          "url": "/sdc/v1",
+          "path":"/sdc/v1",
+          "protocol": "REST",
+          "visualRange":"1",
+          "port": "{{ .Values.service.internalPort }}",
+        }
+      ]{{ end }}
 
 ingress:
   enabled: false
   service:
-    - baseaddr: "sdc.api.be"
+    - baseaddr: "sdc-be-api"
       name: "sdc-be"
-      port: 8443
+      port: 8080
   config:
     ssl: "redirect"
 
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: consul-read
+      - serviceAccount: consul-server-read
+      - serviceAccount: modeling-etsicatalog-read
+      - serviceAccount: nbi-read
+      - serviceAccount: oof-has-read
+      - serviceAccount: portal-db-read
+      - serviceAccount: so-cnfm-lcm-read
+      - serviceAccount: so-etsi-sol003-adapter-read
+      - serviceAccount: so-read
+      - serviceAccount: istio-ingress
+        namespace: istio-ingress
 
 # Resource Limit flavor -By Default using small
 flavor: small
@@ -148,18 +155,18 @@ flavor: small
 resources:
   small:
     limits:
-      cpu: 1
-      memory: 2Gi
+      cpu: "1"
+      memory: "3Gi"
     requests:
-      cpu: 100m
-      memory: 1Gi
+      cpu: "0.5"
+      memory: "3Gi"
   large:
     limits:
-      cpu: 2
-      memory: 4Gi
+      cpu: "2"
+      memory: "6Gi"
     requests:
-      cpu: 200m
-      memory: 2Gi
+      cpu: "1"
+      memory: "6Gi"
   unlimited: {}
 
 #Pods Service Account

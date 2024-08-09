@@ -126,13 +126,13 @@ labels: {{- include "common.labels" (dict "labels" $labels "dot" $dot) | nindent
 {{-       else }}
   protocol: TCP
 {{-       end }}
+{{-       if $port.app_protocol }}
+  appProtocol: {{ $port.app_protocol }}
+{{-       end }}
 {{-       if $port.port_protocol }}
   name: {{ printf "%ss-%s" $port.port_protocol $port.name }}
 {{-       else }}
   name: {{ $port.name }}
-{{-       end }}
-{{-       if (eq $serviceType "NodePort") }}
-  nodePort: {{ include "common.nodePortPrefix" (dict "dot" $dot "useNodePortExt" $port.useNodePortExt) }}{{ $port.nodePort }}
 {{-       end }}
 {{-     else }}
 - port: {{ default $port.port $port.plain_port }}
@@ -142,20 +142,29 @@ labels: {{- include "common.labels" (dict "labels" $labels "dot" $dot) | nindent
 {{-       else }}
   protocol: {{ default "TCP" $port.l4_protocol  }}
 {{-       end }}
+{{-       if $port.app_protocol }}
+  appProtocol: {{ $port.app_protocol }}
+{{-       end }}
 {{-       if $port.port_protocol }}
   name: {{ printf "%s-%s" $port.port_protocol $port.name }}
 {{-       else }}
   name: {{ $port.name }}
 {{-       end }}
 {{-     end }}
+{{-     if (eq $serviceType "NodePort") }}
+  nodePort: {{ include "common.nodePortPrefix" (dict "dot" $dot "useNodePortExt" $port.useNodePortExt) }}{{ $port.nodePort }}
+{{-     end }}
 {{-     if (and (and (include "common.needTLS" $dot) $add_plain_port) $port.plain_port)  }}
 {{-       if (eq $serviceType "ClusterIP")  }}
 - port: {{ $port.plain_port }}
   targetPort: {{ $port.name }}-plain
-{{-       if $port.plain_l4_port_protocol }}
+{{-         if $port.plain_l4_port_protocol }}
   protocol: {{ $port.plain_port_l4_protocol }}
-{{-       else }}
+{{-         else }}
   protocol: {{ default "TCP" $port.l4_protocol  }}
+{{-         end }}
+{{-       if $port.app_protocol }}
+  appProtocol: {{ $port.app_protocol }}
 {{-       end }}
 {{-         if $port.port_protocol }}
   name: {{ printf "%s-%s" $port.port_protocol $port.name }}
@@ -241,6 +250,9 @@ spec:
 {{-   $both_tls_and_plain:= default false $dot.Values.service.both_tls_and_plain }}
 {{-   $labels := default (dict) .labels -}}
 {{-   $matchLabels := default (dict) .matchLabels -}}
+{{-   if and (include "common.ingressEnabled" $dot) (eq $serviceType "NodePort") -}}
+{{-     $serviceType = "ClusterIP" }}
+{{-   end }}
 
 {{-   if (and (include "common.needTLS" $dot) $both_tls_and_plain) }}
 {{      include "common.genericService" (dict "suffix" $suffix "annotations" $annotations "msb_informations" $msb_informations "dot" $dot "publishNotReadyAddresses" $publishNotReadyAddresses "ports" $ports "serviceType" "ClusterIP" "add_plain_port" true $labels "matchLabels" $matchLabels) }}

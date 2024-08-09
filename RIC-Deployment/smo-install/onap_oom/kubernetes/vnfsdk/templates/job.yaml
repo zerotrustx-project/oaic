@@ -1,5 +1,6 @@
 {{/*
 # Copyright © 2017 Amdocs, Bell Canada
+# Modifications © 2023 Deutsche Telekom
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -37,8 +38,8 @@ spec:
       - command:
         - /app/ready.py
         args:
-        - --container-name
-        - "{{ .Values.postgres.nameOverride }}"
+        - --service-name
+        - "{{ .Values.postgres.service.name2 }}"
         env:
         - name: NAMESPACE
           valueFrom:
@@ -48,6 +49,13 @@ spec:
         image: {{ include "repositoryGenerator.image.readiness" . }}
         imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy}}
         name: {{ include "common.name" . }}-readiness
+        resources:
+          limits:
+            cpu: "100m"
+            memory: "500Mi"
+          requests:
+            cpu: "3m"
+            memory: "20Mi"
       containers:
       - name: {{ include "common.name" . }}-job
         image: {{ include "repositoryGenerator.image.postgres" . }}
@@ -66,8 +74,8 @@ spec:
         - name: init-data
           mountPath: /aaa/init/marketplace_tables_postgres.sql
           subPath: marketplace_tables_postgres.sql
-      imagePullSecrets:
-      - name: "{{ include "common.namespace" . }}-docker-registry-key"
+      {{ include "common.waitForJobContainer" . | indent 6 | trim }}
+      {{- include "common.imagePullSecrets" . | nindent 6 }}
       volumes:
       - name: init-data
         configMap:

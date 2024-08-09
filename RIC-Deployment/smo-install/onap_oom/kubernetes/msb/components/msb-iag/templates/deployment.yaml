@@ -16,33 +16,18 @@
 */}}
 apiVersion: apps/v1
 kind: Deployment
-metadata:
-  name: {{ include "common.fullname" . }}
-  namespace: {{ include "common.namespace" . }}
-  labels:
-    app: {{ include "common.name" . }}
-    chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
-    release: {{ include "common.release" . }}
-    heritage: {{ .Release.Service }}
+metadata: {{- include "common.resourceMetadata" . | nindent 2 }}
 spec:
-  selector:
-    matchLabels:
-      app: {{ include "common.name" . }}
+  selector: {{- include "common.selectors" . | nindent 4 }}
   replicas: {{ .Values.replicaCount }}
   template:
-    metadata:
-      labels:
-        app: {{ include "common.name" . }}
-        release: {{ include "common.release" . }}
-      annotations:
-        sidecar.istio.io/inject: "{{.Values.istioSidecar}}"
+    metadata: {{- include "common.templateMetadata" . | nindent 6 }}
     spec:
       initContainers:
-      {{ include "common.certInitializer.initContainer" . | indent 6 | trim }}
       - command:
         - /app/ready.py
         args:
-        - --container-name
+        - --service-name
         - msb-discovery
         env:
         - name: NAMESPACE
@@ -53,15 +38,18 @@ spec:
         image: {{ include "repositoryGenerator.image.readiness" . }}
         imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
         name: {{ include "common.name" . }}-readiness
+        resources:
+          limits:
+            cpu: "100m"
+            memory: "500Mi"
+          requests:
+            cpu: "3m"
+            memory: "20Mi"
       containers:
         - name: {{ include "common.name" . }}
           image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
           imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
-          ports:
-          - containerPort: {{ .Values.service.internalPort }}
-            name: {{ .Values.service.name }}
-          - containerPort: {{ .Values.service.internalPortHttps }}
-            name: {{ .Values.service.name }}-https
+          ports: {{- include "common.containerPorts" . | indent 10 }}
           # disable liveness probe when breakpoints set in debugger
           # so K8s doesn't restart unresponsive container
           {{- if eq .Values.liveness.enabled true }}
@@ -84,17 +72,9 @@ spec:
           - name: ROUTE_LABELS
             value: {{ .Values.config.routeLabels }}
           volumeMounts:
-          {{ include "common.certInitializer.volumeMount" . | indent 10 | trim }}
-          - mountPath: /etc/localtime
-            name: localtime
-            readOnly: true
           - mountPath: /usr/local/apiroute-works/logs
             name: {{ include "common.fullname" . }}-logs
-          - mountPath: /usr/local/openresty/nginx/msb-enabled/msbhttps.conf
-            name: {{ include "common.fullname" . }}-nginx-conf
-            subPath: msbhttps.conf
-          resources:
-{{ include "common.resources" . | indent 12 }}
+          resources: {{ include "common.resources" . | nindent 12 }}
         {{- if .Values.nodeSelector }}
         nodeSelector:
 {{ toYaml .Values.nodeSelector | indent 10 }}
@@ -107,18 +87,10 @@ spec:
         {{ include "common.log.sidecar" . | nindent 8 }}
       serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
       volumes:
-        {{ include "common.certInitializer.volumes" . | indent 8 | trim }}
         - name: {{ include "common.fullname" . }}-log-conf
           configMap:
             name: {{ include "common.fullname" . }}-log
-        - name: {{ include "common.fullname" . }}-nginx-conf
-          configMap:
-            name: {{ include "common.fullname" . }}-nginx
         {{ include "common.log.volumes" (dict "dot" . "configMapNamePrefix" (tpl .Values.logConfigMapNamePrefix . )) | nindent 8 }}
         - name:  {{ include "common.fullname" . }}-logs
           emptyDir: {}
-        - name: localtime
-          hostPath:
-            path: /etc/localtime
-      imagePullSecrets:
-      - name: "{{ include "common.namespace" . }}-docker-registry-key"
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

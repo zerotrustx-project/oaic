@@ -5,7 +5,7 @@
         "port":9014,
         "userName":"healthcheck",
         "password":"zb!XztG34",
-        "https":true
+        "https":{{ (eq "true" (include "common.needTLS" .)) | ternary true false }}
     },
     "receptionHandlerParameters":{
         "SDCReceptionHandler":{
@@ -27,15 +27,11 @@
         "sdcConfiguration":{
             "parameterClassName":"org.onap.policy.distribution.reception.handling.sdc.SdcReceptionHandlerConfigurationParameterGroup",
             "parameters":{
-            "asdcAddress": "sdc-be.{{ include "common.namespace" . }}:8443",
-                "messageBusAddress": [
-                    "message-router.{{ include "common.namespace" . }}"
-                 ],
+                "sdcAddress": "sdc-be.{{ include "common.namespace" . }}:{{ (eq "true" (include "common.needTLS" .)) | ternary 8443 8080 }}",
                 "user": "multicloud",
                 "password": "Kp8bJ4SXszM0WXlhak3eHlcse2gAw84vaoGGmJvUy2U",
                 "pollingInterval":20,
                 "pollingTimeout":30,
-                "consumerId": "multicloud-k8s-id",
                 "artifactTypes": [
                     "TOSCA_CSAR",
                     "HEAT",
@@ -48,13 +44,20 @@
                     "CLOUD_TECHNOLOGY_SPECIFIC_ARTIFACT",
                     "HELM"
                 ],
-                "consumerGroup": "multicloud-k8s-group",
+                {{- with (first .Values.kafkaUser.acls) }}
+                "consumerGroup": "{{ .name }}",
+                "consumerId": "{{ .name }}-k8s",
+                {{- end }}
                 "environmentName": "AUTO",
                 "keystorePath": "null",
                 "keystorePassword": "null",
                 "activeserverTlsAuth": false,
                 "isFilterinEmptyResources": true,
-                "isUseHttpsWithDmaap": false
+                "isUseHttpsWithSDC": {{ (eq "true" (include "common.needTLS" .)) | ternary true false }},
+                "httpsproxyHost": "null",
+                "httpproxyHost": "null",
+                "httpsproxyPort": 8181,
+                "httpproxyPort": 8080
             }
         }
     },
@@ -62,7 +65,7 @@
         "k8sConfiguration":{
             "parameterClassName":"org.onap.policy.distribution.forwarding.k8s.K8sArtifactForwarderParameterGroup",
             "parameters":{
-                "useHttps": true,
+                "useHttps": {{ (eq "true" (include "common.needTLS" .)) | ternary true false }},
                 "hostname": "pdp",
                 "port": 8081,
                 "userName": "testpdp",

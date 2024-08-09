@@ -45,6 +45,9 @@
 - containerPort: {{ default $port.plain_port $port.internal_plain_port }}
   name: {{ $port.name }}-plain
 {{-     end }}
+{{-     if $port.l4_protocol }}
+  protocol: {{ $port.l4_protocol }}
+{{-     end }}
 {{-   end }}
 {{- end -}}
 
@@ -56,6 +59,9 @@ securityContext:
   runAsUser: {{ .Values.securityContext.user_id }}
   runAsGroup: {{ .Values.securityContext.group_id }}
   fsGroup: {{ .Values.securityContext.group_id }}
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
 {{- end }}
 
 {{/*
@@ -66,4 +72,8 @@ securityContext:
   readOnlyRootFilesystem: true
   privileged: false
   allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+      - CAP_NET_RAW
 {{- end }}

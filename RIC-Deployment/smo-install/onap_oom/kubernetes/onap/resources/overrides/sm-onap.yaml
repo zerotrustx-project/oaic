@@ -20,7 +20,8 @@
 #
 # Minimal resources are also reviewed for the various containers
 # AAI: no override => to be fixed
-# DMAAP: no override # SO: no override
+# DMAAP: no override
+# SO: no override
 # SDC: new values
 # SDNC: no override
 #
@@ -44,6 +45,9 @@
 #######################
 global:
   aafEnabled: false
+  cmpv2Enabled: false
+  msbEnabled: false
+  tlsEnabled: false
   centralizedLoggingEnabled: false
   serviceMesh:
     enabled: true
@@ -56,34 +60,24 @@ aai:
       replicas: 1
   aai-cassandra:
     replicaCount: 1
-aaf:
-  enabled: false
-  aaf-sms:
-    cps:
-      # you must always set the same values as value set in cps.enabled
-      enabled: false
-appc:
-  enabled: false
 cassandra:
   enabled: true
   replicaCount: 3
-clamp:
-  enabled: false
 cli:
-  enabled: false
-consul:
-  enabled: false
-contrib:
   enabled: false
 cps:
   enabled: false
-dcaegen2:
-  enabled: false
 dcaegen2-services:
   enabled: false
+dmaap:
+  enabled: true
+  message-router:
+    enabled: true
+  dmaap-dr-prov:
+    enabled: true
+  dmaap-dr-node:
+    enabled: true
 holmes:
-  enabled: false
-log:
   enabled: false
 mariadb-galera:
   enabled: true
@@ -97,9 +91,7 @@ oof:
   enabled: false
 policy:
   enabled: false
-pomba:
-  enabled: false
-portal:
+portal-ng:
   enabled: false
 robot:
   enabled: false
@@ -112,19 +104,17 @@ sdc:
     resources:
       small:
         limits:
-          cpu: 1
-          memory: 2Gi
+          cpu: "1"
+          memory: "2Gi"
         requests:
-          cpu: 10m
-          memory: 500Mi
+          cpu: "10m"
+          memory: "500Mi"
   sdc-cs:
     config:
       maxHeapSize: "512M"
       heapNewSize: "256M"
 sdnc:
   enabled: true
-sniro-emulator:
-  enabled: false
 so:
   enabled: true
   config:
@@ -134,9 +124,11 @@ so:
     openStackKeyStoneUrl: "$OPENSTACK_KEYSTONE_URL"
     openStackServiceTenantName: "$OPENSTACK_TENANT_NAME"
     openStackEncryptedPasswordHere: "$OPENSTACK_ENCRYPTED_PASSWORD"
+strimzi:
+  enabled: true
+  strimzi-kafka-bridge:
+    enabled: true
 uui:
-  enabled: false
-vid:
   enabled: false
 vfc:
   enabled: false
@@ -144,7 +136,4 @@ vnfsdk:
   enabled: false
 cds:
   enabled: true
-dmaap:
-  enabled: true
-  dmaap-bc:
-    enabled: false
+

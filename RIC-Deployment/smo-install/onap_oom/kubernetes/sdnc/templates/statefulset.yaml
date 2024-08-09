@@ -20,13 +20,10 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata: {{- include "common.resourceMetadata" . | nindent 2 }}
 spec:
-  selector:
-    matchLabels:
-      app: {{ include "common.name" . }}
-  serviceName: {{ include "common.servicename" . }}-cluster
-  replicas: {{ .Values.replicaCount }}
   selector: {{- include "common.selectors" . | nindent 4 }}
+  serviceName: {{ include "common.servicename" . }}-cluster
   podManagementPolicy: Parallel
+  replicas: {{ .Values.replicaCount }}
   template:
     metadata: {{- include "common.templateMetadata" . | nindent 6 }}
     spec:
@@ -105,22 +102,29 @@ spec:
           {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "odl-creds" "key" "password") | indent 10 }}
         - name: ODL_PASSWORD
           {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "odl-creds" "key" "password") | indent 10 }}
-        {{ if and .Values.config.sdnr.dmaapProxy.enabled  .Values.config.sdnr.dmaapProxy.usepwd }}
-        - name: DMAAP_HTTP_PROXY_USERNAME
-          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "dmaap-proxy-creds" "key" "login") | indent 10 }}
-        - name: DMAAP_HTTP_PROXY_PASSWORD
-          {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "dmaap-proxy-creds" "key" "password") | indent 10 }}
-        {{- end }}
         {{ if .Values.config.sdnr.oauth.enabled }}
         - name: OAUTH_TOKEN_SECRET
           {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "oauth-token-secret" "key" "password") | indent 10 }}
         - name: KEYCLOAK_SECRET
           {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "keycloak-secret" "key" "password") | indent 10 }}
-
         - name: ENABLE_ODLUX_RBAC
           value: "{{ .Values.config.sdnr.oauth.odluxRbac.enabled | default "true" }}"
         {{ end }}
-
+        - name: SDNR_KAFKA_ENABLED
+          value: "{{ .Values.config.sdnr.kafka.enabled | default "false" }}"
+        {{ if .Values.config.sdnr.kafka.enabled }}
+        - name: SDNR_KAFKA_BOOTSTRAP_SERVERS
+          value: "{{ .Values.config.sdnr.kafka.bootstrapServers | default (include "common.release" .) }}-strimzi-kafka-bootstrap.{{.Release.Namespace}}:9092"
+        - name: SDNR_KAFKA_SECURITY_PROTOCOL
+          value: "{{ .Values.config.sdnr.kafka.securityProtocol | default "SASL_PLAINTEXT" }}"
+        - name: SDNR_KAFKA_SASL_MECHANISM
+          value: "{{ .Values.config.sdnr.kafka.saslMechanism | default "SCRAM-SHA-512" }}"
+        - name: SDNR_KAFKA_SASL_JASS_CONFIG
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "common.name" . }}-ku
+              key: sasl.jaas.config
+        {{ end }}
         volumeMounts:
         - mountPath: /config-input
           name: config-input
@@ -134,7 +138,7 @@ spec:
         - /app/ready.py
         args:
         {{ if .Values.dgbuilder.enabled -}}
-        - --container-name
+        - --service-name
         - {{ include "common.mariadbService" . }}
         - --job-name
         - {{ include "common.fullname" . }}-dbinit-job
@@ -152,8 +156,14 @@ spec:
         image: {{ include "repositoryGenerator.image.readiness" . }}
         imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
         name: {{ include "common.name" . }}-readiness
-        {{ end -}}
-{{ include "common.certInitializer.initContainer" . | indent 6 }}
+        resources:
+          limits:
+            cpu: "100m"
+            memory: "500Mi"
+          requests:
+            cpu: "3m"
+            memory: "20Mi"
+        {{ end }}
       - name: {{ include "common.name" . }}-chown
         image: {{ include "repositoryGenerator.image.busybox" . }}
         command:
@@ -165,11 +175,7 @@ spec:
            mkdir {{ .Values.persistence.mdsalPath }}/snapshots
            mkdir {{ .Values.persistence.mdsalPath }}/daexim
            chown -R {{ .Values.config.odlUid }}:{{ .Values.config.odlGid}} {{ .Values.persistence.mdsalPath }}
-{{- if .Values.global.aafEnabled }}
-           chown -R {{ .Values.config.odlUid }}:{{ .Values.config.odlGid}} {{ .Values.certInitializer.credsPath }}
-{{- end }}
         volumeMounts:
-{{ include "common.certInitializer.volumeMount" . | indent 10 }}
           - mountPath: {{ .Values.persistence.mdsalPath }}
             name: {{ include "common.fullname" . }}-data
       containers:
@@ -268,7 +274,7 @@ spec:
           - name: GEO_ENABLED
             value: "{{ .Values.config.geoEnabled}}"
           - name: SDNC_AAF_ENABLED
-            value: "{{ .Values.global.aafEnabled}}"
+            value: "false"
           - name: SDNC_REPLICAS
             value: "{{ .Values.replicaCount }}"
           - name: MYSQL_HOST
@@ -297,12 +303,30 @@ spec:
           {{- end }}
           - name: SDNRONLY
             value: "{{ .Values.config.sdnr.sdnronly | default "false" }}"
+          {{- if .Values.config.sdnr.mariadb.enabled }}
+          - name: SDNRCONTROLLERID
+            value: {{ uuidv4 }}
+          - name: SDNRDBTYPE
+            value: MARIADB
           - name: SDNRDBURL
-            {{- $prefix := ternary "https" "http" .Values.global.aafEnabled}}
-            value: "{{$prefix}}://{{ .Values.elasticsearch.service.name | default "sdnrdb"}}.{{.Release.Namespace}}:{{.Values.elasticsearch.service.port | default "9200"}}"
+            value: "jdbc:mysql://{{ include "common.mariadbService" . }}:3306/{{ .Values.config.sdnr.mariadb.databaseName}}"
+          - name: SDNR_DB_DATABASE
+            value: {{ .Values.config.sdnr.mariadb.databaseName }}
+          - name: SDNRDBUSERNAME
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "sdnrdb-secret" "key" "login") | indent 12 }}
+          - name: SDNRDBPASSWORD
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "sdnrdb-secret" "key" "password") | indent 12 }}
+          - name: SDNR_ASYNC_HANDLING
+            value: {{ .Values.config.sdnr.mariadb.asyncHandling | default "false" | quote }}
+          - name: SDNR_ASYNC_POOLSIZE
+            value: {{ .Values.config.sdnr.mariadb.asyncPoolSize | default 200 | quote }}
+          {{- else }}
+          - name: SDNRDBURL
+            value: "http://{{ .Values.elasticsearch.service.name | default "sdnrdb"}}.{{.Release.Namespace}}:{{.Values.elasticsearch.service.port | default "9200"}}"
           {{- if .Values.config.sdnr.sdnrdbTrustAllCerts }}
           - name: SDNRDBTRUSTALLCERTS
             value: "true"
+          {{- end }}
           {{- end }}
           {{- if .Values.global.cmpv2Enabled }}
           - name: ODL_CERT_DIR
@@ -332,15 +356,26 @@ spec:
             {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "ves-collector-secret" "key" "login") | indent 12 }}
           - name: SDNR_VES_COLLECTOR_PASSWORD
             {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "ves-collector-secret" "key" "password") | indent 12 }}
+          - name: SDNR_WEBSOCKET_PORT
+            value: "{{ .Values.sdnrWebsocketPort | default "8182"}}"
+          - name: SDNR_KAFKA_ENABLED
+            value: "{{ .Values.config.sdnr.kafka.enabled | default "false" }}"
+          {{ if .Values.config.sdnr.kafka.enabled }}
+          - name: SDNR_KAFKA_BOOTSTRAP_SERVERS
+            value: "{{ .Values.config.sdnr.kafka.bootstrapServers | default (include "common.release" .) }}-strimzi-kafka-bootstrap.{{.Release.Namespace}}:9092"
+          - name: SDNR_KAFKA_SECURITY_PROTOCOL
+            value: "{{ .Values.config.sdnr.kafka.securityProtocol | default "PLAINTEXT" }}"
+          - name: SDNR_KAFKA_SASL_MECHANISM
+            value: "{{ .Values.config.sdnr.kafka.saslMechanism | default "PLAIN" }}"
+          - name: SDNR_KAFKA_SASL_JASS_CONFIG
+            value: "{{ .Values.config.sdnr.kafka.saslJassConfig | default "PLAIN" }}"
+          {{ end }}
+
 
           volumeMounts:
-{{ include "common.certInitializer.volumeMount" . | indent 10 }}
 {{- if .Values.global.cmpv2Enabled }}
 {{ include "common.certManager.volumeMounts" . | indent 10 }}
 {{- end }}
-          - mountPath: /etc/localtime
-            name: localtime
-            readOnly: true
           - mountPath: /opt/opendaylight/current/etc/org.ops4j.pax.logging.cfg
             name: sdnc-logging-cfg-config
             subPath: org.ops4j.pax.logging.cfg
@@ -413,13 +448,9 @@ spec:
       {{- if .Values.affinity }}
       affinity: {{ toYaml .Values.affinity | nindent 8 }}
       {{- end }}
-      imagePullSecrets:
-      - name: "{{ include "common.namespace" . }}-docker-registry-key"
+      {{- include "common.imagePullSecrets" . | nindent 6 }}
       serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
       volumes:
-        - name: localtime
-          hostPath:
-            path: /etc/localtime
         - name: logs
           emptyDir: {}
         {{ include "common.log.volumes" . | nindent 8 }}
@@ -441,7 +472,6 @@ spec:
         - name: {{ include "common.fullname" . }}-data
           emptyDir: {}
   {{ else }}
-{{ include "common.certInitializer.volumes" . | nindent 8 }}
 {{- if .Values.global.cmpv2Enabled }}
 {{ include "common.certManager.volumes" . | nindent 8 }}
 {{- end }}

@@ -3,6 +3,7 @@
 # Modifications Copyright (c) 2018 AT&T
 # Modifications Copyright (c) 2020 Nokia
 # Modifications Copyright (c) 2021 Orange
+# Modifications Copyright © 2023 Nordix Foundation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,11 +25,18 @@ metadata:
   namespace: {{ include "common.namespace" . }}
   labels:
     app: {{ include "common.name" . }}
+    app.kubernetes.io/name: {{ include "common.name" . }}
+    {{- if .Chart.AppVersion }}
+    version: "{{ .Chart.AppVersion | replace "+" "_" }}"
+    {{- else }}
+    version: "{{ .Chart.Version | replace "+" "_" }}"
+    {{- end }}
     chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
     release: {{ include "common.release" . }}
     heritage: {{ .Release.Service }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
   minReadySeconds: {{ .Values.minReadySeconds }}
   strategy:
     type: {{ .Values.updateStrategy.type }}
@@ -43,6 +51,12 @@ spec:
       labels:
         app: {{ include "common.name" . }}
         release: {{ include "common.release" . }}
+        app.kubernetes.io/name: {{ include "common.name" . }}
+        {{- if .Chart.AppVersion }}
+        version: "{{ .Chart.AppVersion | replace "+" "_" }}"
+        {{- else }}
+        version: "{{ .Chart.Version | replace "+" "_" }}"
+        {{- end }}
       name: {{ include "common.name" . }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
@@ -79,7 +93,7 @@ spec:
     spec:
       hostname: aai-resources
       terminationGracePeriodSeconds: {{ .Values.service.terminationGracePeriodSeconds }}
-      initContainers: {{ include "common.certInitializer.initContainer" . | nindent 6 }}
+      initContainers:
       - name: {{ include "common.name" . }}-readiness
         command:
         - /app/ready.py
@@ -92,13 +106,9 @@ spec:
         - --job-name
         - {{ include "common.release" . }}-aai-graphadmin-create-db-schema
           {{- else }}
-        - --container-name
-            {{- if .Values.global.cassandra.localCluster }}
-        - aai-cassandra
-            {{- else }}
-        - cassandra
-            {{- end }}
-        - --container-name
+        - --service-name
+        - {{ .Values.global.cassandra.serviceName }}
+        - --service-name
         - aai-schema-service
           {{- end }}
         {{- end }}
@@ -110,36 +120,50 @@ spec:
               fieldPath: metadata.namespace
         image: {{ include "repositoryGenerator.image.readiness" . }}
         imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        resources:
+          limits:
+            cpu: "100m"
+            memory: "500Mi"
+          requests:
+            cpu: "3m"
+            memory: "20Mi"
       containers:
       - name: {{ include "common.name" . }}
         image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
         imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
-        command:
-        - sh
-        args:
-        - -c
-        - |
-          echo "*** retrieve Truststore and Keystore password"
-          export $(cat {{ .Values.certInitializer.credsPath }}/mycreds.prop | xargs -0)
-          echo "*** actual launch of AAI Resources"
-          /bin/bash /opt/app/aai-resources/docker-entrypoint.sh
         env:
+        {{- if .Values.config.env }}
+        {{- range $key,$value := .Values.config.env }}
+        - name: {{ $key | upper | quote}}
+          value: {{ $value | quote}}
+        {{- end }}
+        {{- end }}
+        {{- if .Values.config.profiling.enabled }}
+        - name: PRE_JVM_ARGS
+          value: '{{ join " " .Values.config.profiling.args }}'
+        {{- end }}
+        {{- if .Values.config.debug.enabled }}
+        - name: POST_JVM_ARGS
+          value: {{ .Values.config.debug.args | quote }}
+        {{- end }}
         - name: LOCAL_USER_ID
           value: {{ .Values.global.config.userId | quote }}
         - name: LOCAL_GROUP_ID
           value: {{ .Values.global.config.groupId | quote }}
-        - name: POST_JAVA_OPTS
-          value: '-Djavax.net.ssl.trustStore={{ .Values.certInitializer.credsPath }}/truststoreONAPall.jks -Djavax.net.ssl.trustStorePassword={{ .Values.certInitializer.truststorePassword }}'
-        - name: TRUSTORE_ALL_PASSWORD
-          value: {{ .Values.certInitializer.truststorePassword }}
         - name: INTERNAL_PORT_1
-          value: {{ .Values.service.internalPort | quote }}
+          value: {{ .Values.service.resourcesPort | quote }}
         - name: INTERNAL_PORT_2
-          value: {{ .Values.service.internalPort2 | quote }}
-        volumeMounts: {{ include "common.certInitializer.volumeMount" . | nindent 8 }}
-        - mountPath: /etc/localtime
-          name: localtime
-          readOnly: true
+          value: {{ .Values.service.debugPort | quote }}
+        - name: INTERNAL_PORT_3
+          value: {{ .Values.service.metricsPort | quote }}
+        - name: BOOTSTRAP_SERVERS
+          value: {{ include "common.release" . }}-strimzi-kafka-bootstrap:9092
+        - name: JAAS_CONFIG
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "common.release" . }}-{{ .Values.global.aaiKafkaUser }}
+              key: sasl.jaas.config
+        volumeMounts:
         - mountPath: /opt/app/aai-resources/resources/etc/appprops/janusgraph-realtime.properties
           name: {{ include "common.fullname" . }}-config
           subPath: janusgraph-realtime.properties
@@ -160,21 +184,6 @@ spec:
         - mountPath: /opt/app/aai-resources/resources/etc/auth/realm.properties
           name: {{ include "common.fullname" . }}-config
           subPath: realm.properties
-        - mountPath: /opt/app/aai-resources/resources/aaf/bath_config.csv
-          name: {{ include "common.fullname" . }}-aaf-certs
-          subPath: bath_config.csv
-        - mountPath: /opt/app/aai-resources/resources/aaf/org.onap.aai.props
-          name: {{ include "common.fullname" . }}-aaf-properties
-          subPath: org.onap.aai.props
-        - mountPath: /opt/app/aai-resources/resources/aaf/org.osaaf.location.props
-          name: {{ include "common.fullname" . }}-aaf-properties
-          subPath: org.osaaf.location.props
-        - mountPath: /opt/app/aai-resources/resources/aaf/permissions.properties
-          name: {{ include "common.fullname" . }}-aaf-properties
-          subPath: permissions.properties
-        - mountPath: /opt/app/aai-resources/resources/cadi.properties
-          name: {{ include "common.fullname" . }}-aaf-properties
-          subPath: cadi.properties
         - mountPath: /opt/app/aai-resources/resources/application.properties
           name: {{ include "common.fullname" . }}-config
           subPath: application.properties
@@ -182,8 +191,18 @@ spec:
           name: {{ include "common.fullname" . }}-config
           subPath: application-keycloak.properties
         ports:
-        - containerPort: {{ .Values.service.internalPort }}
-        - containerPort: {{ .Values.service.internalPort2 }}
+        - containerPort: {{ .Values.service.resourcesPort }}
+          name: {{ .Values.service.resourcesPortName }}
+        {{- if .Values.config.debug.enabled }}
+        - containerPort: {{ .Values.service.debugPort }}
+          name: {{ .Values.service.debugPortName }}
+        {{- end }}
+        - containerPort: {{ .Values.service.metricsPort }}
+          name: {{ .Values.service.metricsPortName }}
+        {{- if .Values.config.profiling.enabled }}
+        - containerPort: {{ .Values.service.profilingPort }}
+          name: {{ .Values.service.profilingPortName }}
+        {{- end }}
         lifecycle:
           # wait for active requests (long-running tasks) to be finished
           # Before the SIGTERM is invoked, Kubernetes exposes a preStop hook in the Pod.
@@ -193,24 +212,42 @@ spec:
                 - sh
                 - -c
                 - |
-                  while (netstat -an | grep ESTABLISHED | grep -e $INTERNAL_PORT_1 -e $INTERNAL_PORT_2)
-                  do sleep 10
+                  while (netstat -an | grep ESTABLISHED | grep -e $INTERNAL_PORT_1)
+                  do sleep 3
                   done
-        # disable liveness probe when breakpoints set in debugger
-        # so K8s doesn't restart unresponsive container
-        {{- if .Values.liveness.enabled }}
+        # disable liveness probe when
+        # debugging.enable=true or profiling.enabled=true
+        {{- if and .Values.liveness.enabled (not (or .Values.config.debug.enabled .Values.config.profiling.enabled)) }}
         livenessProbe:
-          tcpSocket:
-            port: {{ .Values.service.internalPort }}
+          httpGet:
+            path: /aai/util/echo?action=checkDB
+            port: {{ .Values.service.resourcesPort }}
+            scheme: HTTP
+            httpHeaders:
+            - name: X-FromAppId
+              value: LivenessCheck
+            - name: X-TransactionId
+              value: LiveCheck_TID
+            - name: Accept
+              value: application/json
           initialDelaySeconds: {{ .Values.liveness.initialDelaySeconds }}
           periodSeconds: {{ .Values.liveness.periodSeconds }}
         {{- end }}
         readinessProbe:
-          tcpSocket:
-            port: {{ .Values.service.internalPort }}
+          httpGet:
+            path: /aai/util/echo?action=checkDB
+            port: {{ .Values.service.resourcesPort }}
+            scheme: HTTP
+            httpHeaders:
+            - name: X-FromAppId
+              value: ReadinessCheck
+            - name: X-TransactionId
+              value: ReadinessCheck_TID
+            - name: Accept
+              value: application/json
           initialDelaySeconds: {{ .Values.readiness.initialDelaySeconds }}
           periodSeconds: {{ .Values.readiness.periodSeconds }}
-        resources: {{ include "common.resources" . | nindent 12 }}
+        resources: {{ include "common.resources" . | nindent 10 }}
       {{- if .Values.nodeSelector }}
       nodeSelector: {{ toYaml .Values.nodeSelector | nindent 8 }}
       {{- end }}
@@ -220,22 +257,12 @@ spec:
       # side car containers
       {{ include "common.log.sidecar" . | nindent 6 }}
       serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
-      volumes: {{ include "common.certInitializer.volumes" . | nindent 6 }}
-      - name: localtime
-        hostPath:
-          path: /etc/localtime
+      volumes:
       - name: logs
         emptyDir: {}
       {{ include "common.log.volumes" (dict "dot" . "configMapNamePrefix" (tpl .Values.logConfigMapNamePrefix .)) | nindent 6 }}
       - name: {{ include "common.fullname" . }}-config
         configMap:
           name: {{ include "common.fullname" . }}
-      - name: {{ include "common.fullname" . }}-aaf-properties
-        configMap:
-          name: {{ include "common.fullname" . }}-aaf-props
-      - name: {{ include "common.fullname" . }}-aaf-certs
-        secret:
-          secretName: {{ include "common.fullname" . }}-aaf-keys
       restartPolicy: {{ .Values.restartPolicy }}
-      imagePullSecrets:
-      - name: "{{ include "common.namespace" . }}-docker-registry-key"
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

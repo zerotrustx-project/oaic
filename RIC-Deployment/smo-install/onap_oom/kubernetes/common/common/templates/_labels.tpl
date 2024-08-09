@@ -1,5 +1,6 @@
 {{/*
 # Copyright © 2019 Orange
+# Modifications Copyright (C) 2022 Bell Canada
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,7 +26,15 @@ The function takes several arguments (inside a dictionary):
 {{- define "common.labels" -}}
 {{- $dot := default . .dot -}}
 app.kubernetes.io/name: {{ include "common.name" $dot }}
+app: {{ include "common.name" $dot }}
+{{- if $dot.Chart.AppVersion }}
+version: "{{ $dot.Chart.AppVersion | replace "+" "_" }}"
+{{- else }}
+version: "{{ $dot.Chart.Version | replace "+" "_" }}"
+{{- end }}
+{{ if not .ignoreHelmChart }}
 helm.sh/chart: {{ include "common.chart" $dot }}
+{{- end }}
 app.kubernetes.io/instance: {{ include "common.release" $dot }}
 app.kubernetes.io/managed-by: {{ $dot.Release.Service }}
 {{ if .labels }}
@@ -67,7 +76,7 @@ app.kubernetes.io/instance: {{ include "common.release" $dot }}
 {{- $annotations := default (dict) .annotations -}}
 name: {{ include "common.fullname" (dict "suffix" $suffix "dot" $dot )}}
 namespace: {{ include "common.namespace" $dot }}
-labels: {{- include "common.labels" (dict "labels" $labels "dot" $dot ) | nindent 2 }}
+labels: {{- include "common.labels" (dict "labels" $labels "ignoreHelmChart" .ignoreHelmChart "dot" $dot ) | nindent 2 }}
 {{- if $annotations }}
 annotations:  {{- include "common.tplValue" (dict "value" $annotations "context" $dot) | nindent 2}}
 {{- end }}
@@ -97,6 +106,6 @@ matchLabels: {{- include "common.matchLabels" (dict "matchLabels" $matchLabels "
 {{- if $dot.Values.podAnnotations }}
 annotations: {{- include "common.tplValue" (dict "value" $dot.Values.podAnnotations "context" $dot) | nindent 2 }}
 {{- end }}
-labels: {{- include "common.labels" (dict "labels" $labels "dot" $dot) | nindent 2 }}
+labels: {{- include "common.labels" (dict "labels" $labels "ignoreHelmChart" .ignoreHelmChart "dot" $dot) | nindent 2 }}
 name: {{ include "common.name" $dot }}
 {{- end -}}

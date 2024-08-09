@@ -1,4 +1,5 @@
 # Copyright (C) 2021 Bell Canada
+# Modifications Copyright © 2022-2023 Nordix Foundation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -32,14 +33,56 @@ secrets:
     passwordPolicy: generate
 
 passwordStrengthOverride: basic
+
+standaloneDeployment: false
+
 global:
   ingress:
     virtualhost:
       baseurl: "simpledemo.onap.org"
 
+  kafkaBootstrap: strimzi-kafka-bootstrap
+  cpsKafkaUser: cps-kafka-user
+
 config:
   coreUserName: cpsuser
   dmiPluginUserName: dmiuser
+  useStrimziKafka: true
+  ncmpEventsTopic:
+    name: ncmp-events
+    retentionMs: 7200000
+    consumer:
+      groupId: ncmp-group
+  ncmpAsyncM2MTopic:
+    name: ncmp-async-m2m
+    retentionMs: 600000
+    consumer:
+      groupId: ncmp-group
+  dmiCmEventsTopic:
+    name: dmi-cm-events
+    retentionMs: 7200000
+    consumer:
+      groupId: ncmp-group
+  ncmpCmAvcSubscriptionTopic:
+    name: cm-avc-subscription
+    retentionMs: 7200000
+    consumer:
+      groupId: ncmp-group
+  ncmpCmEventsTopic:
+    name: cm-events
+    retentionMs: 7200000
+    consumer:
+      groupId: ncmp-group
+  dmiCmAvcSubscriptionTopic:
+    name: ncmp-dmi-cm-avc-subscription-ncmp-dmi-plugin
+    retentionMs: 7200000
+    consumer:
+      groupId: ncmp-group
+  dmiCmAvcSubscriptionResponseTopic:
+    name: dmi-ncmp-cm-avc-subscription
+    retentionMs: 7200000
+    consumer:
+      groupId: ncmp-group
 
 # Enable all CPS components by default
 cps-core:
@@ -47,9 +90,12 @@ cps-core:
   config:
     appUserExternalSecret: *core-creds-secret
     dmiPluginUserExternalSecret: *dmi-plugin-creds-secret
+    jaasConfExternalSecret: '{{ include "common.release" . }}-{{ .Values.global.cpsKafkaUser }}'
 
 cps-temporal:
   enabled: true
+  config:
+    jaasConfExternalSecret: '{{ include "common.release" . }}-{{ .Values.global.cpsKafkaUser }}'
 
 ncmp-dmi-plugin:
   enabled: true

@@ -1,7 +1,8 @@
 #============LICENSE_START========================================================
 # ================================================================================
-# Copyright (c) 2021 J. F. Lucas. All rights reserved.
-# Copyright (c) 2021 Nokia.  All rights reserved.
+# Copyright (c) 2021-2023 J. F. Lucas. All rights reserved.
+# Copyright (c) 2021-2022 Nokia.  All rights reserved.
+# Modifications Copyright (C) 2022-2023 Nordix Foundation.
 # ================================================================================
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -34,16 +35,17 @@ filebeatConfig:
 #################################################################
 # initContainer images.
 #################################################################
-tlsImage: onap/org.onap.dcaegen2.deployments.tls-init-container:2.1.0
-consulLoaderImage: onap/org.onap.dcaegen2.deployments.consul-loader-container:1.1.1
 certPostProcessorImage: onap/org.onap.oom.platform.cert-service.oom-certservice-post-processor:2.5.0
 
 #################################################################
 # Application configuration defaults.
 #################################################################
 # application image
-image: onap/org.onap.dcaegen2.collectors.hv-ves.hv-collector-main:1.9.1
+image: onap/org.onap.dcaegen2.collectors.hv-ves.hv-collector-main:1.11.0
 pullPolicy: Always
+
+commonName: &commonName dcae-hv-ves-collector
+containerPort: &containerPort 6061
 
 # log directory where logging sidecar should look for log files
 # if path is set to null sidecar won't be deployed in spite of
@@ -56,18 +58,6 @@ logConfigMapNamePrefix: '{{ include "common.fullname" . }}'
 # if absent, no certs will be retrieved and stored
 certDirectory: /etc/ves-hv/ssl
 
-# TLS role -- set to true if microservice acts as server
-# If true, an init container will retrieve a server cert
-# and key from AAF and mount them in certDirectory.
-tlsServer: true
-
-secrets:
-  - uid: &aafCredsUID aafcreds
-    type: basicAuth
-    login: '{{ .Values.aafCreds.user }}'
-    password: '{{ .Values.aafCreds.password }}'
-    passwordPolicy: required
-
 # CMPv2 certificate
 # It is used only when:
 # - certDirectory is set
@@ -77,9 +67,9 @@ secrets:
 useCmpv2Certificates: false
 certificates:
   - mountPath: /etc/ves-hv/ssl/external
-    commonName: dcae-hv-ves-collector
+    commonName: *commonName
     dnsNames:
-      - dcae-hv-ves-collector
+      - *commonName
       - hv-ves-collector
       - hv-ves
     keystore:
@@ -90,12 +80,6 @@ certificates:
         key: password
         create: true
 
-# dependencies
-readinessCheck:
-  wait_for:
-    - dcae-config-binding-service
-    - aaf-cm
-
 # probe configuration
 readiness:
   type: exec
@@ -105,84 +89,116 @@ readiness:
   command:
   - /opt/ves-hv-collector/healthcheck.sh
 
+# since there are problems receiving binary data via the sidecar
+# the service port is excluded in the sidecar processing
+podAnnotations:
+  traffic.sidecar.istio.io/excludeInboundPorts: '6061'
+  traffic.sidecar.istio.io/includeInboundPorts: '*'
+
 # service configuration
 service:
   type: NodePort
-  name: dcae-hv-ves-collector
+  name: *commonName
   ports:
-    - name: http
-      port: 6061
-      port_protocol: http
+    - name: tcp
+      port: *containerPort
+      port_protocol: tcp
+      app_protocol: tcp
       nodePort: 22
 
-aafCreds:
-  user: admin
-  password: admin_secret
+ingress:
+  enabled: false
+  service:
+    - baseaddr: "dcae-hv-ves-collector-api"
+      name: *commonName
+      port: *containerPort
+  config:
+    ssl: "redirect"
 
-credentials:
-- name: AAF_USER
-  uid: *aafCredsUID
-  key: login
-- name: AAF_PASSWORD
-  uid: *aafCredsUID
-  key: password
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: istio-ingress
+        namespace: istio-ingress
 
 # initial application configuration
 applicationConfig:
   logLevel: INFO
   server.idleTimeoutSec: 300
-  server.listenPort: 6061
+  server.listenPort: *containerPort
   cbs.requestIntervalSec: 5
-  security.sslDisable: false
+  security.sslDisable: true
   security.keys.keyStoreFile: /etc/ves-hv/ssl/cert.jks
   security.keys.keyStorePasswordFile: /etc/ves-hv/ssl/jks.pass
   security.keys.trustStoreFile: /etc/ves-hv/ssl/trust.jks
   security.keys.trustStorePasswordFile: /etc/ves-hv/ssl/trust.pass
   streams_publishes:
     ves-3gpp-fault-supervision:
-      type: kafka
-      aaf_credentials:
-        username: ${AAF_USER}
-        password: ${AAF_PASSWORD}
+      type: ${MESSAGING_TYPE}
       kafka_info:
-        bootstrap_servers: message-router-kafka:9092
-        topic_name: SEC_3GPP_FAULTSUPERVISION_OUTPUT
+        bootstrap_servers: ${KAFKA_BOOTSTRAP_SERVERS}
+        topic_name: &ves3gppFaultSupervision SEC_3GPP_FAULTSUPERVISION_OUTPUT
     ves-3gpp-provisioning:
-      type: kafka
-      aaf_credentials:
-        username: ${AAF_USER}
-        password: ${AAF_PASSWORD}
+      type: ${MESSAGING_TYPE}
       kafka_info:
-        bootstrap_servers: message-router-kafka:9092
-        topic_name: SEC_3GPP_PROVISIONING_OUTPUT
+        bootstrap_servers: ${KAFKA_BOOTSTRAP_SERVERS}
+        topic_name: &ves3gppProvisioning SEC_3GPP_PROVISIONING_OUTPUT
     ves-3gpp-heartbeat:
-      type: kafka
-      aaf_credentials:
-        username: ${AAF_USER}
-        password: ${AAF_PASSWORD}
+      type: ${MESSAGING_TYPE}
       kafka_info:
-        bootstrap_servers: message-router-kafka:9092
-        topic_name: SEC_3GPP_HEARTBEAT_OUTPUT
+        bootstrap_servers: ${KAFKA_BOOTSTRAP_SERVERS}
+        topic_name: &ves3gppHeartbeat SEC_3GPP_HEARTBEAT_OUTPUT
     ves-3gpp-performance-assurance:
-      type: kafka
-      aaf_credentials:
-        username: ${AAF_USER}
-        password: ${AAF_PASSWORD}
+      type: ${MESSAGING_TYPE}
       kafka_info:
-        bootstrap_servers: message-router-kafka:9092
-        topic_name: SEC_3GPP_PERFORMANCEASSURANCE_OUTPUT
+        bootstrap_servers: ${KAFKA_BOOTSTRAP_SERVERS}
+        topic_name: &ves3gppPerformanceAssurance SEC_3GPP_PERFORMANCEASSURANCE_OUTPUT
     perf3gpp:
-      type: kafka
-      aaf_credentials:
-        username: ${AAF_USER}
-        password: ${AAF_PASSWORD}
+      type: ${MESSAGING_TYPE}
       kafka_info:
-        bootstrap_servers: message-router-kafka:9092
-        topic_name: HV_VES_PERF3GPP
+        bootstrap_servers: ${KAFKA_BOOTSTRAP_SERVERS}
+        topic_name: &perf3gpp HV_VES_PERF3GPP
+
+# Strimzi Kafka config
+kafkaUser:
+  acls:
+    - name: SEC_3GPP
+      type: topic
+      patternType: prefix
+      operations: [Write, DescribeConfigs]
+    - name: *perf3gpp
+      type: topic
+      operations: [Write, DescribeConfigs]
+
+kafkaTopic:
+  - name: *ves3gppFaultSupervision
+    strimziTopicName: dcae-ves-3gpp-fault-supervision
+    # the default retention values below can be updated
+    # to meet use case requirements for each topic.
+    retentionMs: 7200000
+    segmentBytes: 1073741824
+  - name: *ves3gppProvisioning
+    strimziTopicName: dcae-ves-3gpp-provisioning
+  - name: *ves3gppHeartbeat
+    strimziTopicName: dcae-ves-3gpp-heartbeat
+  - name: *ves3gppPerformanceAssurance
+    strimziTopicName: dcae-ves-3gpp-performance-assurance
+  - name: *perf3gpp
+    strimziTopicName: dcae-ves-3gpp-perf
+
 
 applicationEnv:
   JAVA_OPTS: '-Dlogback.configurationFile=/etc/ONAP/dcae-hv-ves-collector/logback.xml'
   CBS_CLIENT_CONFIG_PATH: '/app-config-input/application_config.yaml'
+  #Temporary Dummy CBS Port Value until internal SDK library is updated
+  CONFIG_BINDING_SERVICE_SERVICE_PORT: '0000'
+  MESSAGING_TYPE: 'kafka'
+  KAFKA_BOOTSTRAP_SERVERS: '{{ include "common.release" . }}-strimzi-kafka-bootstrap:9092'
+  USE_SCRAM: 'true'
+  JAAS_CONFIG:
+    externalSecret: true
+    externalSecretUid: '{{ include "common.name" . }}-ku'
+    key: sasl.jaas.config
 
 # Resource Limit flavor -By Default using small
 flavor: small
@@ -190,22 +206,22 @@ flavor: small
 resources:
   small:
     limits:
-      cpu: 2
-      memory: 2Gi
+      cpu: "2"
+      memory: "1Gi"
     requests:
-      cpu: 1
-      memory: 1Gi
+      cpu: "1"
+      memory: "1Gi"
   large:
     limits:
-      cpu: 4
-      memory: 4Gi
+      cpu: "4"
+      memory: "2Gi"
     requests:
-      cpu: 2
-      memory: 2Gi
+      cpu: "2"
+      memory: "2Gi"
   unlimited: {}
 
 #Pods Service Account
 serviceAccount:
-  nameOverride: dcae-hv-ves-collector
+  nameOverride: *commonName
   roles:
     - read

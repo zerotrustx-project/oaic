@@ -1,6 +1,7 @@
 # Copyright © 2017 Amdocs, Bell Canada
 # Modifications Copyright © 2021 Orange
 # Modifications Copyright © 2021 Nordix Foundation
+# Modifications Copyright © 2022 Huawei Technologies Co., Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,24 +18,27 @@
 apiVersion: v2
 description: ONAP uui
 name: uui
-version: 10.0.0
+version: 13.1.0
 
 dependencies:
   - name: common
-    version: ~10.x-0
+    version: ~13.x-0
     # local reference to common chart, as it is
     # a part of this chart's package and will not
     # be published independently to a repo (at this point)
     repository: '@local'
   - name: repositoryGenerator
-    version: ~10.x-0
-    repository: '@local'
-  - name: certInitializer
-    version: ~10.x-0
+    version: ~13.x-0
     repository: '@local'
   - name: uui-server
-    version: ~10.x-0
+    version: ~13.x-0
     repository: 'file://components/uui-server'
   - name: uui-nlp
-    version: ~10.x-0
+    version: ~13.x-0
     repository: 'file://components/uui-nlp'
+  - name: uui-intent-analysis
+    version: ~13.x-0
+    repository: 'file://components/uui-intent-analysis'
+  - name: uui-llm-adaptation
+    version: ~13.x-0
+    repository: 'file://components/uui-llm-adaptation'

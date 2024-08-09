@@ -1,8 +1,9 @@
 #============LICENSE_START========================================================
 # ================================================================================
-# Copyright (c) 2021 J. F. Lucas. All rights reserved.
-# Copyright (c) 2021 Nokia.  All rights reserved.
+# Copyright (c) 2021-2022 Nokia.  All rights reserved.
+# Copyright (c) 2021-2023 J. F. Lucas. All rights reserved.
 # Copyright (c) 2022 AT&T Intellectual Property. All rights reserved.
+# Copyright (c) 2024 Deutsche Telekom Intellectual Property. All rights reserved.
 # ================================================================================
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -35,15 +36,13 @@ filebeatConfig:
 #################################################################
 # initContainer images.
 #################################################################
-tlsImage: onap/org.onap.dcaegen2.deployments.tls-init-container:2.1.0
-consulLoaderImage: onap/org.onap.dcaegen2.deployments.consul-loader-container:1.1.1
 certPostProcessorImage: onap/org.onap.oom.platform.cert-service.oom-certservice-post-processor:2.5.0
 
 #################################################################
 # Application configuration defaults.
 #################################################################
 # application image
-image: onap/org.onap.dcaegen2.collectors.ves.vescollector:1.10.3
+image: onap/org.onap.dcaegen2.collectors.ves.vescollector:1.12.4
 pullPolicy: Always
 
 # log directory where logging sidecar should look for log files
@@ -56,11 +55,6 @@ logConfigMapNamePrefix: '{{ include "common.fullname" . }}'
 # directory where TLS certs should be stored
 # if absent, no certs will be retrieved and stored
 certDirectory: /opt/app/dcae-certificate
-
-# TLS role -- set to true if microservice acts as server
-# If true, an init container will retrieve a server cert
-# and key from AAF and mount them in certDirectory.
-tlsServer: true
 
 # CMPv2 certificate
 # It is used only when:
@@ -84,13 +78,8 @@ certificates:
         key: password
         create: true
 
-# dependencies
-readinessCheck:
-  wait_for:
-    - dcae-config-binding-service
-    - aaf-cm
-
 # probe configuration
+readiness:
   initialDelaySeconds: 5
   periodSeconds: 15
   path: /healthcheck
@@ -109,10 +98,97 @@ service:
       nodePort: 17
       useNodePortExt: true
 
+ingress:
+  enabled: false
+  service:
+    - baseaddr: "dcae-ves-collector-api"
+      name: "dcae-ves-collector"
+      port: 8443
+      plain_port: 8080
+  config:
+    ssl: "redirect"
+
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: istio-ingress
+        namespace: istio-ingress
+
 # application environments
 applicationEnv:
   CBS_CLIENT_CONFIG_PATH: '/app-config-input/application_config.yaml'
   LOG4J_FORMAT_MSG_NO_LOOKUPS: 'true'
+  BOOTSTRAP_SERVERS: '{{ include "common.release" . }}-strimzi-kafka-bootstrap:9092'
+  JAAS_CONFIG:
+    externalSecret: true
+    externalSecretUid: '{{ include "common.name" . }}-ku'
+    key: sasl.jaas.config
+
+# Strimzi Kafka config
+kafkaUser:
+  acls:
+    - name: unauthenticated.VES_PNFREG_OUTPUT
+      type: topic
+      patternType: literal
+      operations: [Write, DescribeConfigs]
+    - name: unauthenticated.VES_NOTIFICATION_OUTPUT
+      type: topic
+      patternType: literal
+      operations: [Write, DescribeConfigs]
+    - name: unauthenticated.SEC_HEARTBEAT_OUTPUT
+      type: topic
+      patternType: literal
+      operations: [Write, DescribeConfigs]
+    - name: unauthenticated.SEC_OTHER_OUTPUT
+      type: topic
+      patternType: literal
+      operations: [Write, DescribeConfigs]
+    - name: unauthenticated.SEC_FAULT_OUTPUT
+      type: topic
+      patternType: literal
+      operations: [Write, DescribeConfigs]
+    - name: unauthenticated.VES_MEASUREMENT_OUTPUT
+      type: topic
+      patternType: literal
+      operations: [Write, DescribeConfigs]
+    - name: unauthenticated.SEC_3GPP_FAULTSUPERVISION_OUTPUT
+      type: topic
+      patternType: literal
+      operations: [Write, DescribeConfigs]
+    - name: unauthenticated.SEC_3GPP_PROVISIONING_OUTPUT
+      type: topic
+      patternType: literal
+      operations: [Write, DescribeConfigs]
+    - name: unauthenticated.SEC_3GPP_HEARTBEAT_OUTPUT
+      type: topic
+      patternType: literal
+      operations: [Write, DescribeConfigs]
+    - name: unauthenticated.SEC_3GPP_PERFORMANCEASSURANCE_OUTPUT
+      type: topic
+      patternType: literal
+      operations: [Write, DescribeConfigs]
+
+kafkaTopic:
+  - name: unauthenticated.VES_PNFREG_OUTPUT
+    strimziTopicName: unauthenticated.ves-pnfreg-output
+  - name: unauthenticated.VES_NOTIFICATION_OUTPUT
+    strimziTopicName: unauthenticated.ves-notification-output
+  - name: unauthenticated.SEC_HEARTBEAT_OUTPUT
+    strimziTopicName: unauthenticated.sec-heartbeat-output
+  - name: unauthenticated.SEC_OTHER_OUTPUT
+    strimziTopicName: unauthenticated.sec-other-output
+  - name: unauthenticated.SEC_FAULT_OUTPUT
+    strimziTopicName: unauthenticated.sec-fault-output
+  - name: unauthenticated.VES_MEASUREMENT_OUTPUT
+    strimziTopicName: unauthenticated.ves-measurment-output
+  - name: unauthenticated.SEC_3GPP_FAULTSUPERVISION_OUTPUT
+    strimziTopicName: unauthenticated.sec-3gpp-faultsupervision-output
+  - name: unauthenticated.SEC_3GPP_PROVISIONING_OUTPUT
+    strimziTopicName: unauthenticated.sec-3gpp-provisioning-output
+  - name: unauthenticated.SEC_3GPP_HEARTBEAT_OUTPUT
+    strimziTopicName: unauthenticated.sec-3gpp-heartbeat-output
+  - name: unauthenticated.SEC_3GPP_PERFORMANCEASSURANCE_OUTPUT
+    strimziTopicName: unauthenticated.sec-3gpp-performanceassurance-output
 
 # initial application configuration
 applicationConfig:
@@ -132,7 +208,7 @@ applicationConfig:
   collector.service.port: "8080"
   collector.service.secure.port: "8443"
   event.transform.flag: "0"
-  auth.method: "certBasicAuth"
+  auth.method: "noAuth"
   header.authlist: "sample1,$2a$10$0buh.2WeYwN868YMwnNNEuNEAMNYVU9.FSMJGyIKV3dGET/7oGOi6|demouser,$2a$10$1cc.COcqV/d3iT2N7BjPG.S6ZKv2jpb9a5MV.o7lMih/GpjJRX.Ce"
   services_calls: []
   streams_publishes:
@@ -193,18 +269,18 @@ flavor: small
 resources:
   small:
     limits:
-      cpu: 2
-      memory: 2Gi
+      cpu: "2"
+      memory: "1.5Gi"
     requests:
-      cpu: 1
-      memory: 1Gi
+      cpu: "1"
+      memory: "1.5Gi"
   large:
     limits:
-      cpu: 4
-      memory: 4Gi
+      cpu: "4"
+      memory: "3Gi"
     requests:
-      cpu: 2
-      memory: 2Gi
+      cpu: "2"
+      memory: "3Gi"
   unlimited: {}
 
 #Pods Service Account

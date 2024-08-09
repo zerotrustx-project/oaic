@@ -41,7 +41,7 @@ spec:
       - command:
         - /app/ready.py
         args:
-        - --container-name
+        - --service-name
         - msb-discovery
         env:
         - name: NAMESPACE
@@ -52,6 +52,13 @@ spec:
         image: {{ include "repositoryGenerator.image.readiness" . }}
         imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
         name: {{ include "common.name" . }}-readiness
+        resources:
+          limits:
+            cpu: "100m"
+            memory: "500Mi"
+          requests:
+            cpu: "3m"
+            memory: "20Mi"
       containers:
         - name: {{ include "common.name" . }}
           image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
@@ -61,12 +68,7 @@ spec:
             value: {{ .Values.config.kubeMasterUrl }}
           - name: MSB_URL
             value: {{tpl $.Values.config.discoveryUrl .}}
-          volumeMounts:
-          - mountPath: /etc/localtime
-            name: localtime
-            readOnly: true
-          resources:
-{{ include "common.resources" . | indent 12 }}
+          resources: {{ include "common.resources" . | nindent 12 }}
         {{- if .Values.nodeSelector }}
         nodeSelector:
 {{ toYaml .Values.nodeSelector | indent 10 }}
@@ -75,9 +77,4 @@ spec:
         affinity:
 {{ toYaml .Values.affinity | indent 10 }}
         {{- end }}
-      volumes:
-        - name: localtime
-          hostPath:
-            path: /etc/localtime
-      imagePullSecrets:
-      - name: "{{ include "common.namespace" . }}-docker-registry-key"
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

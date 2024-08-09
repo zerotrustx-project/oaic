@@ -15,9 +15,9 @@
 */}}
 
 aai:
-  auth: {{ include "so.helpers.profileProperty" (dict "condition" .Values.global.security.aaf.enabled "value1" .Values.global.aaf.auth.header "value2" .Values.aai.auth )}}
+  auth: {{ .Values.aai.auth }}
   version: v19
-  endpoint: https://aai.{{ include "common.namespace" . }}:8443
+  endpoint: http://aai.{{ include "common.namespace" . }}:80
 spring:
   datasource:
     hikari:
@@ -41,6 +41,9 @@ spring:
       password: ${ETSI_NFVO_PASSWORD}
       role: ETSI-NFVO-Client
 server:
+  {{- if include "common.onServiceMesh" . }}
+  forward-headers-strategy: none
+  {{- end }}
   port: {{ .Values.containerPort }}
   tomcat:
     max-threads: 50
@@ -54,12 +57,7 @@ so:
 etsi-catalog-manager:
   base:
   {{- if .Values.global.msbEnabled }}
-    endpoint: https://msb-iag:443/api
-  http:
-    client:
-      ssl:
-        trust-store: file:${TRUSTSTORE}
-        trust-store-password: ${TRUSTSTORE_PASSWORD}
+    endpoint: http://msb-iag:80/api
   {{- else }}
     endpoint: http://modeling-etsicatalog.{{ include "common.namespace" . }}:8806/api
   {{- end }}

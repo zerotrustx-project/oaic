@@ -18,38 +18,72 @@
 #################################################################
 global:
   nodePortPrefix: 302
-  artifactImage: onap/multicloud/framework-artifactbroker:1.7.2
+  artifactImage: onap/multicloud/framework-artifactbroker:1.9.0
   persistence: {}
 
 #################################################################
 # Application configuration defaults.
 #################################################################
 # application image
-image: onap/multicloud/openstack-windriver:1.5.6
+image: onap/multicloud/openstack-windriver:1.5.7
 pullPolicy: Always
-
-#Istio sidecar injection policy
-istioSidecar: true
 
 # application configuration
 config:
   ssl_enabled: true
-  msbprotocol: https
   msbgateway: msb-iag
-  msbPort: 443
+  msbPort: 80
   aai:
-    port: 8443
+    aaiPort: 80
     schemaVersion: v13
     username: AAI
     password: AAI
 
 service:
-  type: ClusterIP
-  name: multicloud-titaniumcloud
-  portName: multicloud-titaniumcloud
-  externalPort: 9005
+  type: NodePort
   internalPort: 9005
-  nodePort: 94
+  ports:
+    - name: http
+      port: 9005
+      nodePort: '94'
+  annotations:
+    msb.onap.org/service-info: |
+      {{ if .Values.global.msbEnabled -}}[
+        {
+          "serviceName": "multicloud-titanium_cloud",
+          "version": "v0",
+          "url": "/api/multicloud-titanium_cloud/v0",
+          "protocol": "REST",
+          "port": "{{ .Values.service.internalPort }}",
+          "enable_ssl": false,
+          "visualRange": "1"
+        },
+        {
+          "serviceName": "multicloud-titaniumcloud",
+          "version": "v0",
+          "url": "/api/multicloud-titaniumcloud/v0",
+          "protocol": "REST",
+          "port": "{{ .Values.service.internalPort }}",
+          "enable_ssl": false,
+          "visualRange": "1"
+        },
+        {
+          "serviceName": "multicloud-titaniumcloud",
+          "version": "v1",
+          "url": "/api/multicloud-titaniumcloud/v1",
+          "protocol": "REST",
+          "port": "{{ .Values.service.internalPort }}",
+          "enable_ssl": false,
+          "visualRange": "1"
+        }
+      ]{{ end }}
+
+ingress:
+  enabled: false
+  service:
+    - baseaddr: 'multicloud-titaniumcloud-api'
+      name: 'multicloud-titaniumcloud'
+      port: 9005
 
 # default number of instances
 replicaCount: 1
@@ -67,9 +101,6 @@ liveness:
   failureThreshold: 5
   enabled: true
 
-ingress:
-  enabled: false
-
 persistence:
   enabled: true
   mountPath: /dockerdata-nfs
@@ -84,19 +115,22 @@ flavor: small
 resources:
   small:
     limits:
-      cpu: 1
-      memory: 4Gi
+      cpu: "1"
+      memory: "4Gi"
     requests:
-      cpu: 10m
-      memory: 1Gi
+      cpu: "10m"
+      memory: "1Gi"
   large:
     limits:
-      cpu: 2
-      memory: 8Gi
+      cpu: "2"
+      memory: "8Gi"
     requests:
-      cpu: 20m
-      memory: 2Gi
+      cpu: "20m"
+      memory: "2Gi"
   unlimited: {}
+
+# memcached image resource
+memcached: memcached:alpine3.15
 
 #Pods Service Account
 serviceAccount:

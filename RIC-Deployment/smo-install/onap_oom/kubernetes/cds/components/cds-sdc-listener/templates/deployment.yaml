@@ -1,5 +1,6 @@
 {{/*
 # Copyright (c) 2019 Bell Canada
+# Modification Copyright © 2022 Nordix Foundation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,38 +14,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 */}}
-
 apiVersion: apps/v1
 kind: Deployment
-metadata:
-  name: {{ include "common.fullname" . }}
-  namespace: {{ include "common.namespace" . }}
-  labels:
-    app: {{ include "common.name" . }}
-    chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
-    release: {{ include "common.release" . }}
-    heritage: {{ .Release.Service }}
+metadata: {{- include "common.resourceMetadata" . | nindent 2 }}
 spec:
-  selector:
-    matchLabels:
-      app: {{ include "common.name" . }}
   replicas: {{ .Values.replicaCount }}
+  selector: {{- include "common.selectors" . | nindent 4 }}
   template:
-    metadata:
-      labels:
-        app: {{ include "common.name" . }}
-        release: {{ include "common.release" . }}
+    metadata: {{- include "common.templateMetadata" . | nindent 6 }}
     spec:
       initContainers:
         - command:
           - /app/ready.py
           args:
-            - --container-name
+            - --service-name
             - sdc-be
-            - --container-name
-            - message-router
-            - --container-name
-            - cds-blueprints-processor
+            - --service-name
+            - cds-blueprints-processor-http
           env:
           - name: NAMESPACE
             valueFrom:
@@ -54,6 +40,13 @@ spec:
           image: {{ include "repositoryGenerator.image.readiness" . }}
           imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
           name: {{ include "common.name" . }}-readiness
+          resources:
+            limits:
+              cpu: "100m"
+              memory: "500Mi"
+            requests:
+              cpu: "3m"
+              memory: "20Mi"
       containers:
         - name: {{ include "common.name" . }}
           image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
@@ -61,20 +54,24 @@ spec:
           env:
           - name: APP_CONFIG_HOME
             value: {{ .Values.config.appConfigDir }}
-          ports:
-          - containerPort: {{ .Values.service.http.internalPort }}
+          - name: SASL_JAAS_CONFIG
+            valueFrom:
+              secretKeyRef:
+                name: {{ include "common.name" . }}-ku
+                key: sasl.jaas.config
+          ports: {{- include "common.containerPorts" . | nindent 12 }}
           {{ if .Values.liveness.enabled }}
           livenessProbe:
             httpGet:
               path: /api/v1/sdclistener/healthcheck
-              port: {{ .Values.service.http.internalPort }}
+              port: {{ .Values.service.internalPort }}
             initialDelaySeconds: {{ .Values.liveness.initialDelaySeconds }}
             periodSeconds: {{ .Values.liveness.periodSeconds }}
           {{end}}
           readinessProbe:
             httpGet:
               path: /api/v1/sdclistener/healthcheck
-              port: {{ .Values.service.http.internalPort }}
+              port: {{ .Values.service.internalPort }}
             initialDelaySeconds: {{ .Values.readiness.initialDelaySeconds }}
             periodSeconds: {{ .Values.readiness.periodSeconds }}
           volumeMounts:
@@ -84,8 +81,7 @@ spec:
           - mountPath: {{ .Values.config.appConfigDir }}/logback.xml
             name: {{ include "common.fullname" . }}-config
             subPath: logback.xml
-          resources:
-{{ include "common.resources" . | indent 12 }}
+          resources: {{ include "common.resources" . | nindent 12 }}
         {{- if .Values.nodeSelector }}
         nodeSelector:
 {{ toYaml .Values.nodeSelector | indent 10 }}
@@ -104,5 +100,4 @@ spec:
               path: application.yaml
             - key: logback.xml
               path: logback.xml
-      imagePullSecrets:
-      - name: {{ include "common.namespace" . }}-docker-registry-key
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

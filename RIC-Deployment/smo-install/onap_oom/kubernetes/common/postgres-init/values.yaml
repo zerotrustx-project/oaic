@@ -19,6 +19,7 @@ global:
   postgres:
     service:
       name: pgset
+      name2: tcp-pgset-primary
     container:
       name: postgres
 
@@ -76,16 +77,31 @@ flavor: small
 resources:
   small:
     limits:
-      cpu: 100m
-      memory: 300Mi
+      cpu: "100m"
+      memory: "300Mi"
     requests:
-      cpu: 10m
-      memory: 90Mi
+      cpu: "10m"
+      memory: "90Mi"
   large:
     limits:
-      cpu: 2
-      memory: 4Gi
+      cpu: "2"
+      memory: "4Gi"
     requests:
-      cpu: 1
-      memory: 2Gi
+      cpu: "1"
+      memory: "2Gi"
   unlimited: {}
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: postgres-init
+  roles:
+    - read
+
+readinessCheck:
+  wait_for:
+    services:
+    - '{{ .Values.global.postgres.service.name2 }}'
+
+wait_for_job_container:
+  containers:
+    - '{{ include "common.name" . }}-update-config'

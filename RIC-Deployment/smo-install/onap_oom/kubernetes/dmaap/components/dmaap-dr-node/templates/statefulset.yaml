@@ -23,30 +23,23 @@ spec:
   template:
     metadata: {{- include "common.templateMetadata" . | nindent 6 }}
     spec:
-      initContainers: {{ include "common.certInitializer.initContainer" . | nindent 8 }}
-        - name: {{ include "common.name" . }}-readiness
-          image: {{ include "repositoryGenerator.image.readiness" . }}
-          imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
-          command:
-          - /app/ready.py
-          args:
-          - --container-name
-          - dmaap-dr-prov
-          env:
-          - name: NAMESPACE
-            valueFrom:
-              fieldRef:
-                apiVersion: v1
-                fieldPath: metadata.namespace
+      # temporarily use less restrictions
+      securityContext:
+        runAsUser: {{ .Values.securityContext.user_id }}
+        runAsGroup: {{ .Values.securityContext.group_id }}
+        fsGroup: {{ .Values.securityContext.group_id }}
+      initContainers: {{ include "common.readinessCheck.waitFor" . | nindent 8 }}
         - name: {{ include "common.name" . }}-permission-fixer
+          securityContext:
+            runAsUser: 0
           image: {{ include "repositoryGenerator.image.busybox" . }}
           imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
-          volumeMounts: {{ include "common.certInitializer.volumeMount" . | nindent 10 }}
-          - mountPath: {{ .Values.persistence.spool.path }}
-            name: {{ include "common.fullname" . }}-spool
-          - mountPath: {{ .Values.persistence.event.path }}
-            name: {{ include "common.fullname" . }}-event-logs
           command: ["chown","-Rf","1000:1001", "/opt/app/"]
+          volumeMounts:
+            - name: {{ include "common.fullname" . }}-spool
+              mountPath: {{ .Values.persistence.spool.path }}
+            - name: {{ include "common.fullname" . }}-event-logs
+              mountPath: {{ .Values.persistence.event.path }}
       containers:
         - name: {{ include "common.name" . }}
           image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
@@ -64,22 +57,17 @@ spec:
               port: {{.Values.readiness.port}}
             initialDelaySeconds: {{ .Values.readiness.initialDelaySeconds }}
             periodSeconds: {{ .Values.readiness.periodSeconds }}
-          volumeMounts: {{ include "common.certInitializer.volumeMount" . | nindent 10 }}
-          - mountPath: {{ .Values.persistence.spool.path }}
-            name: {{ include "common.fullname" . }}-spool
-          - mountPath: {{ .Values.persistence.event.path }}
-            name: {{ include "common.fullname" . }}-event-logs
-          - mountPath: /etc/localtime
-            name: localtime
-            readOnly: false
-          - mountPath: /opt/app/datartr/etc/node.properties
-            name: {{ include "common.fullname" . }}-config
-            subPath: node.properties
-          - mountPath: /opt/app/datartr/etc/logback.xml
-            name: {{ include "common.fullname" . }}-log-conf
-            subPath: logback.xml
-          - mountPath: {{ .Values.global.loggingDirectory }}
-            name: logs
+          volumeMounts:
+            - mountPath: {{ .Values.persistence.spool.path }}
+              name: {{ include "common.fullname" . }}-spool
+            - mountPath: {{ .Values.persistence.event.path }}
+              name: {{ include "common.fullname" . }}-event-logs
+            - mountPath: /opt/app/datartr/etc/node.properties
+              name: {{ include "common.fullname" . }}-config
+              subPath: node.properties
+            - mountPath: /opt/app/datartr/etc/logback.xml
+              name: {{ include "common.fullname" . }}-log-conf
+              subPath: logback.xml
           resources: {{ include "common.resources" . | nindent 12 }}
         {{- if .Values.nodeSelector }}
         nodeSelector: {{ toYaml .Values.nodeSelector | nindent 10 }}
@@ -87,27 +75,18 @@ spec:
         {{- if .Values.affinity }}
         affinity: {{ toYaml .Values.affinity | nindent 10 }}
         {{- end }}
-        # Filebeat sidecar container
-        {{ include "common.log.sidecar" . | nindent 8 }}
-      imagePullSecrets:
-      - name: "{{ include "common.namespace" . }}-docker-registry-key"
+      {{- include "common.imagePullSecrets" . | nindent 6 }}
       serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
-      volumes: {{ include "common.certInitializer.volumes" . | nindent 8 }}
-        - name: localtime
-          hostPath:
-            path: /etc/localtime
+      volumes:
         - name: {{ include "common.fullname" . }}-config
           configMap:
-            name: {{ include "common.fullname" . }}-configmap
+            name: {{ include "common.fullname" . }}-node-props
             items:
             - key: node.properties
               path: node.properties
         - name: {{ include "common.fullname" . }}-log-conf
           configMap:
             name: {{ include "common.fullname" . }}-log
-        {{ include "common.log.volumes" . | nindent 8 }}
-        - name: logs
-          emptyDir: {}
       {{- if not .Values.persistence.enabled }}
         - name:  {{ include "common.fullname" . }}-event-logs
           emptyDir: {}

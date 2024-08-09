@@ -2,6 +2,7 @@
 # Copyright © 2018 Amdocs, AT&T
 # Modifications Copyright © 2018 Bell Canada
 # Modifications Copyright © 2020,2021 Orange
+# Modifications Copyright © 2023 Nordix Foundation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,43 +19,25 @@
 
 apiVersion: apps/v1
 kind: Deployment
-metadata:
-  name: {{ include "common.fullname" . }}
-  namespace: {{ include "common.namespace" . }}
-  labels:
-    app: {{ include "common.name" . }}
-    chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
-    release: {{ include "common.release" . }}
-    heritage: {{ .Release.Service }}
+metadata: {{- include "common.resourceMetadata" . | nindent 2 }}
 spec:
-  selector:
-    matchLabels:
-      app: {{ include "common.name" . }}
+  selector: {{- include "common.selectors" . | nindent 4 }}
   replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: {{ .Values.updateStrategy.type }}
+    {{- if (eq "RollingUpdate" .Values.updateStrategy.type) }}
+    rollingUpdate:
+      maxUnavailable: {{ .Values.updateStrategy.maxUnavailable }}
+      maxSurge: {{ .Values.updateStrategy.maxSurge }}
+    {{- end }}
   template:
-    metadata:
-      labels:
-        app: {{ include "common.name" . }}
-        release: {{ include "common.release" . }}
+    metadata: {{- include "common.templateMetadata" . | nindent 6 }}
     spec:
-      initContainers:  {{ include "common.certInitializer.initContainer" . | nindent 6 }}
       containers:
         - name: {{ include "common.name" . }}
           image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
           imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
-          {{- if .Values.global.aafEnabled }}
-          command:
-          - sh
-          args:
-          - -c
-          - |
-            echo "*** retrieve Truststore and Keystore password"
-            export $(cat {{ .Values.certInitializer.credsPath }}/mycreds.prop | xargs -0)
-            echo "*** actual launch of AAI Babel"
-            /bin/bash /opt/app/babel/bin/start.sh
-          {{- end }}
-          ports:
-          - containerPort: {{ .Values.service.internalPort }}
+          ports: {{ include "common.containerPorts" . | nindent 12  }}
           # disable liveness probe when breakpoints set in debugger
           # so K8s doesn't restart unresponsive container
           {{ if .Values.liveness.enabled }}
@@ -70,16 +53,11 @@ spec:
             initialDelaySeconds: {{ .Values.readiness.initialDelaySeconds }}
             periodSeconds: {{ .Values.readiness.periodSeconds }}
           env:
-            {{- if not (include "common.needTLS" .) }}
             - name: KEY_STORE_PASSWORD
               value: NotUsed
-            {{- end }}
             - name: CONFIG_HOME
               value: /opt/app/babel/config
-          volumeMounts:  {{ include "common.certInitializer.volumeMount" . | nindent 10 }}
-          - mountPath: /etc/localtime
-            name: localtime
-            readOnly: true
+          volumeMounts:
           - mountPath: /opt/app/babel/config/application.properties
             name: config
             subPath: application.properties
@@ -99,8 +77,7 @@ spec:
           - mountPath: /opt/app/babel/config/logback.xml
             name: config
             subPath: logback.xml
-          resources:
-{{ include "common.resources" . }}
+          resources: {{ include "common.resources" . | nindent 12 }}
       {{- if .Values.nodeSelector }}
       nodeSelector:
 {{ toYaml .Values.nodeSelector | indent 8 }}
@@ -113,10 +90,7 @@ spec:
         # side car containers
       {{ include "common.log.sidecar" . | nindent 8 }}
       serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
-      volumes: {{ include "common.certInitializer.volumes" . | nindent 8 }}
-        - name: localtime
-          hostPath:
-            path: /etc/localtime
+      volumes:
         - name: config
           configMap:
             name: {{ include "common.fullname" . }}-configmap
@@ -127,5 +101,4 @@ spec:
           emptyDir: {}
         {{ include "common.log.volumes" (dict "dot" . "configMapNamePrefix" (tpl .Values.logConfigMapNamePrefix .)) | nindent 8 }}
 
-      imagePullSecrets:
-      - name: "{{ include "common.namespace" . }}-docker-registry-key"
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

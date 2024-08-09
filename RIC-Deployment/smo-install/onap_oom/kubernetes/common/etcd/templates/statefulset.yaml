@@ -15,26 +15,13 @@
 */}}
 apiVersion: apps/v1
 kind: StatefulSet
-metadata:
-  name: {{ include "common.fullname" .  }}
-  labels:
-    heritage: "{{ .Release.Service }}"
-    release: "{{ include "common.release" . }}"
-    chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
-    app: {{ include "common.name" . }}
+metadata: {{- include "common.resourceMetadata" . | nindent 2 }}
 spec:
-  serviceName: {{ include "common.servicename" .}}
+  selector: {{- include "common.selectors" . | nindent 4 }}
+  serviceName: {{ include "common.servicename" . }}
   replicas: {{ .Values.replicaCount }}
-  selector:
-    matchLabels:
-      app: {{ include "common.name" .  }}
   template:
-    metadata:
-      labels:
-        heritage: "{{ .Release.Service }}"
-        release: "{{ include "common.release" . }}"
-        chart: "{{ .Chart.Name }}-{{ .Chart.Version }}"
-        app: {{ include "common.name" . }}
+    metadata: {{- include "common.templateMetadata" . | nindent 6 }}
     spec:
 {{- if .Values.affinity }}
       affinity:
@@ -48,8 +35,7 @@ spec:
       tolerations:
 {{ toYaml .Values.tolerations | indent 8 }}
 {{- end }}
-      imagePullSecrets:
-      - name: "{{ include "common.namespace" . }}-docker-registry-key"
+      {{- include "common.imagePullSecrets" . | nindent 6 }}
       containers:
       - name: {{ include "common.name" .  }}
         image: {{ include "repositoryGenerator.googleK8sRepository" . }}/{{ .Values.image }}
@@ -67,8 +53,7 @@ spec:
           periodSeconds: {{ .Values.liveness.periodSeconds }}
           timeoutSeconds: {{ .Values.liveness.timeoutSeconds }}
         {{ end -}}
-        resources:
-{{ include "common.resources" . | indent 10 }}
+        resources: {{ include "common.resources" . | nindent 10 }}
         env:
         - name: INITIAL_CLUSTER_SIZE
           value: {{ .Values.replicaCount | quote }}

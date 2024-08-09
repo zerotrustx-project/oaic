@@ -19,7 +19,6 @@ kind: Service
 metadata:
   annotations:
     service.alpha.kubernetes.io/tolerate-unready-endpoints: "true"
-metadata:
   name: {{ include "common.servicename" .  }}
   labels:
     heritage: "{{ .Release.Service  }}"
@@ -34,6 +33,5 @@ spec:
     port: {{ .Values.service.clientInternalPort }}
   clusterIP: None
   selector:
-    app: {{ include "common.name" . }}
-    release: "{{ include "common.release" . }}"
-
+    app.kubernetes.io/name: {{ include "common.name" . }}
+    app.kubernetes.io/instance: {{ include "common.release" . }}

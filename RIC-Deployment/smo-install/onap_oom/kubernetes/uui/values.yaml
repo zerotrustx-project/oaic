@@ -1,4 +1,5 @@
 # Copyright © 2017 Amdocs, Bell Canada
+# Copyright (c) 2022 Nordix Foundation.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,40 +17,7 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 global:
-  uuiPortPrefix: 303
-
-#################################################################
-# AAF part
-#################################################################
-certInitializer:
-  nameOverride: uui-cert-initializer
-  aafDeployFqi: deployer@people.osaaf.org
-  aafDeployPass: demo123456!
-  # aafDeployCredsExternalSecret: some secret
-  fqdn: uui
-  fqi: uui@uui.onap.org
-  fqi_namespace: org.onap.uui
-  public_fqdn: uui.onap.org
-  cadi_longitude: "0.0"
-  cadi_latitude: "0.0"
-  app_ns: org.osaaf.aaf
-  credsPath: /opt/app/osaaf/local
-  aaf_add_config: |
-    echo "*** changing them into shell safe ones"
-    export KEYSTORE_PASSWORD=$(tr -cd '[:alnum:]' < /dev/urandom | fold -w64 | head -n1)
-    export TRUSTSORE_PASSWORD=$(tr -cd '[:alnum:]' < /dev/urandom | fold -w64 | head -n1)
-    cd {{ .Values.credsPath }}
-    keytool -storepasswd -new "${KEYSTORE_PASSWORD}" \
-      -storepass "${cadi_keystore_password_p12}" \
-      -keystore {{ .Values.fqi_namespace }}.p12
-    keytool -storepasswd -new "${TRUSTSORE_PASSWORD}" \
-      -storepass "${cadi_truststore_password}" \
-      -keystore {{ .Values.fqi_namespace }}.trust.jks
-    echo "*** save the generated passwords"
-    echo "KEYSTORE_PASSWORD=${KEYSTORE_PASSWORD}" > mycreds.prop
-    echo "TRUSTSORE_PASSWORD=${TRUSTSORE_PASSWORD}" >> mycreds.prop
-    echo "*** change ownership of certificates to targeted user"
-    chown -R 1000 {{ .Values.credsPath }}
+  nodePortPrefix: 302
 
 subChartsOnly:
   enabled: true
@@ -57,7 +25,7 @@ subChartsOnly:
 flavor: small
 
 # application image
-image: onap/usecase-ui:4.0.5
+image: onap/usecase-ui:14.0.0
 pullPolicy: Always
 
 # application configuration
@@ -90,16 +58,33 @@ readiness:
 service:
   type: NodePort
   name: uui
-  portName: uui
-  internalPort: 8443
-  nodePort: 98
+  internalPort: 8080
+  nodePortPrefixOverride: 303
+  ports:
+    - name: http
+      port: 8080
+      nodePort: '98'
+  annotations:
+    msb.onap.org/service-info: |
+      {{ if .Values.global.msbEnabled -}}[
+        {
+          "serviceName": "usecaseui-ui",
+          "version": "v1",
+          "url": "/usecase-ui",
+          "path":"/iui/usecaseui",
+          "protocol": "UI",
+          "visualRange":"1",
+          "port": "{{ include "common.getPort" (dict "global" . "name" "http" "getPlain" true) }}",
+          "enable_ssl": false
+        }
+      ]{{ end }}
 
 ingress:
   enabled: false
   service:
-    - baseaddr: "uui.api"
+    - baseaddr: "uui-ui"
       name: "uui"
-      port: 8443
+      port: 8080
   config:
     ssl: "redirect"
 
@@ -116,16 +101,16 @@ ingress:
 resources:
   small:
     limits:
-      cpu: 250m
-      memory: 1Gi
+      cpu: "250m"
+      memory: "1Gi"
     requests:
-      cpu: 250m
-      memory: 1Gi
+      cpu: "250m"
+      memory: "1Gi"
   large:
     limits:
-      cpu: 500m
-      memory: 1Gi
+      cpu: "500m"
+      memory: "1Gi"
     requests:
-      cpu: 500m
-      memory: 1Gi
+      cpu: "500m"
+      memory: "1Gi"
   unlimited: {}

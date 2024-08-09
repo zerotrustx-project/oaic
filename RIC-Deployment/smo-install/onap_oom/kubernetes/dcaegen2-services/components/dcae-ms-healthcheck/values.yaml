@@ -31,6 +31,10 @@ service:
     - port: 8080
       name: http
 
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals: []
+
 # Label on DCAE microservice deployments
 # (Used by healthcheck code to find deployments
 # created after initial DCAE installation)
@@ -48,7 +52,7 @@ readiness:
   initialDelaySeconds: 10
   periodSeconds: 10
 # application image
-image: onap/org.onap.dcaegen2.deployments.healthcheck-container:2.4.0
+image: onap/org.onap.dcaegen2.deployments.healthcheck-container:2.4.1
 
 # Resource Limit flavor -By Default using small
 flavor: small
@@ -56,18 +60,18 @@ flavor: small
 resources:
   small:
     limits:
-      cpu: 2
-      memory: 2Gi
+      cpu: "2"
+      memory: "500Mi"
     requests:
-      cpu: 1
-      memory: 1Gi
+      cpu: "1"
+      memory: "500Mi"
   large:
     limits:
-      cpu: 4
-      memory: 4Gi
+      cpu: "4"
+      memory: "1Gi"
     requests:
-      cpu: 2
-      memory: 2Gi
+      cpu: "2"
+      memory: "1Gi"
   unlimited: {}
 
 #Pods Service Account

@@ -1,4 +1,3 @@
-{{/*
 # Copyright © 2019 Orange
 # Copyright © 2020 Samsung Electronics
 #
@@ -13,8 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-*/}}
-
+---
 {{ include "mariadbInit._updateSecrets" . -}}
 
 apiVersion: batch/v1
@@ -31,34 +29,30 @@ spec:
   backoffLimit: 20
   template:
     metadata:
+      annotations:
+        # Workarround to exclude K8S API from istio communication
+        # as init-container (readinessCheck) does not work with the
+        # Istio CNI plugin, see:
+        # (https://istio.io/latest/docs/setup/additional-setup/cni/#compatibility-with-application-init-containers)
+        traffic.sidecar.istio.io/excludeOutboundPorts: "443"
       labels:
         app: {{ include "common.name" . }}
         release: {{ include "common.release" . }}
       name: {{ include "common.name" . }}
     spec:
-      initContainers:
-      - name: {{ include "common.name" . }}-readiness
-        command:
-        - /app/ready.py
-        args:
-        - --container-name
-        - {{ default .Values.global.mariadbGalera.nameOverride .Values.mariadbGalera.containerName }}
-        env:
-        - name: NAMESPACE
-          valueFrom:
-            fieldRef:
-              apiVersion: v1
-              fieldPath: metadata.namespace
-        image: {{ include "repositoryGenerator.image.readiness" . }}
-        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+      {{ include "common.podSecurityContext" . | indent 6 | trim }}
+      initContainers: {{ include "common.readinessCheck.waitFor" . | nindent 6 }}
       containers:
       - name: {{ include "common.name" . }}
         image: {{ include "repositoryGenerator.image.mariadb" . }}
         imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        {{ include "common.containerSecurityContext" . | indent 8 | trim }}
         command:
           - /bin/sh
           - -c
           - |
+            {{- if include "common.onServiceMesh" . }}
+            echo "waiting 15s for istio side cars to be up"; sleep 15s;{{- end }}
             /db_init/db_init.sh {{ if or .Values.dbScriptConfigMap .Values.dbScript }} &&
             /db_config/db_cmd.sh{{ end }}
         env:
@@ -80,17 +74,14 @@ spec:
           {{- include "common.secret.envFromSecretFast" (dict "global" $root "uid" $db "key" "password") | indent 10 }}
 {{ end }}
         volumeMounts:
-        - mountPath: /etc/localtime
-          name: localtime
-          readOnly: true
         - name: mariadb-init
           mountPath: /db_init/
 {{- if or .Values.dbScriptConfigMap .Values.dbScript }}
         - name: mariadb-conf
           mountPath: /db_config/
 {{- end }}
-        resources:
-{{ include "common.resources" . | indent 12 }}
+        resources: {{ include "common.resources" . | nindent 10 }}
+      {{ include "common.waitForJobContainer" . | indent 6 | trim }}
       {{- if .Values.nodeSelector }}
       nodeSelector:
 {{ toYaml .Values.nodeSelector | indent 10 }}
@@ -99,10 +90,8 @@ spec:
       affinity:
 {{ toYaml .Values.affinity | indent 10 }}
       {{- end }}
+      serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
       volumes:
-      - name: localtime
-        hostPath:
-          path: /etc/localtime
 {{- if  or .Values.dbScriptConfigMap .Values.dbScript }}
       - name: mariadb-conf
         configMap:
@@ -118,5 +107,4 @@ spec:
           name: {{ include "mariadbInit.configMap" . }}
           defaultMode: 0755
       restartPolicy: Never
-      imagePullSecrets:
-      - name: "{{ include "common.namespace" . }}-docker-registry-key"
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

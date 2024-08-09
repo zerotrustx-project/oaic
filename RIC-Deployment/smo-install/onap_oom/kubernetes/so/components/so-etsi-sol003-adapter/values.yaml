@@ -28,7 +28,7 @@ global:
 #################################################################
 # Application configuration defaults.
 #################################################################
-image: onap/so/so-etsi-sol003-adapter:1.8.2
+image: onap/so/so-etsi-sol003-adapter:1.9.0
 pullPolicy: Always
 
 aaf:
@@ -50,26 +50,34 @@ containerPort: &containerPort 9092
 logPath: ./logs/etsi-sol003-adapter/
 app: etsi-sol003-adapter
 service:
-    type: NodePort
-    internalPort: *containerPort
-    externalPort: *containerPort
-    nodePort: "06"
-    portName: http
+  type: NodePort
+  annotations:
+    service.alpha.kubernetes.io/tolerate-unready-endpoints: 'true'
+    msb.onap.org/service-info: |
+      {{ if .Values.global.msbEnabled -}}[
+        {
+          "serviceName": "{{ include "common.servicename" . }}",
+          "version": "v1",
+          "url": "/so/vnfm-adapter/v1",
+          "protocol": "REST",
+          "port": "{{.Values.containerPort}}",
+          "visualRange":"1"
+        }
+      ]{{ end }}
+  ports:
+    - name: http
+      port: *containerPort
+      nodePort: "06"
+
 updateStrategy:
-    type: RollingUpdate
-    maxUnavailable: 1
-    maxSurge: 1
+  type: RollingUpdate
+  maxUnavailable: 1
+  maxSurge: 1
 
 #################################################################
 # soHelpers part
 #################################################################
 soHelpers:
-  nameOverride: so-etsi-sol003-cert-init
-  certInitializer:
-    nameOverride: so-etsi-sol003-cert-init
-    credsPath: /opt/app/osaaf/local
-  cadi:
-    apiEnforcement: org.onap.so.vnfmAdapterPerm
   containerPort: *containerPort
 
 # Resource Limit flavor -By Default using small
@@ -78,34 +86,43 @@ flavor: small
 resources:
   small:
     limits:
-      memory: 4Gi
-      cpu: 2000m
+      cpu: "1"
+      memory: "1Gi"
     requests:
-      memory: 1Gi
-      cpu: 500m
+      cpu: "0.5"
+      memory: "1Gi"
   large:
     limits:
-      memory: 8Gi
-      cpu: 4000m
+      cpu: "2"
+      memory: "2Gi"
     requests:
-      memory: 2Gi
-      cpu: 1000m
+      cpu: "1"
+      memory: "2Gi"
   unlimited: {}
 livenessProbe:
-    port: 9092
-    initialDelaySeconds: 600
-    periodSeconds: 60
-    timeoutSeconds: 10
-    successThreshold: 1
-    failureThreshold: 3
+  port: 9092
+  initialDelaySeconds: 600
+  periodSeconds: 60
+  timeoutSeconds: 10
+  successThreshold: 1
+  failureThreshold: 3
 ingress:
   enabled: false
   service:
-      - baseaddr: "soetsisol003adapter"
-        name: "so-etsi-sol003-adapter"
-        port: 9092
+  - baseaddr: "so-etsi-sol003-adapter-api"
+    name: "so-etsi-sol003-adapter"
+    port: 9092
   config:
     ssl: "redirect"
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: robot-read
+      - serviceAccount: so-bpmn-infra-read
+      - serviceAccount: so-etsi-nfvo-ns-lcm-read
+      - serviceAccount: so-read
+      - serviceAccount: istio-ingress
+        namespace: istio-ingress
 nodeSelector: {}
 tolerations: []
 affinity: {}

@@ -57,7 +57,7 @@ service:
 ingress:
   enabled: false
   service:
-    - baseaddr: "msb.api.discovery"
+    - baseaddr: "msb-discovery-api"
       name: "msb-discovery"
       port: 10081
   config:
@@ -69,18 +69,18 @@ flavor: small
 resources:
   small:
     limits:
-      cpu: 400m
-      memory: 400Mi
+      cpu: "1"
+      memory: "500Mi"
     requests:
-      cpu: 200m
-      memory: 200Mi
+      cpu: "0.5"
+      memory: "500Mi"
   large:
     limits:
-      cpu: 800m
-      memory: 800Mi
+      cpu: "2"
+      memory: "1Gi"
     requests:
-      cpu: 400m
-      memory: 400Mi
+      cpu: "1"
+      memory: "1Gi"
   unlimited: {}
 
 #Pods Service Account

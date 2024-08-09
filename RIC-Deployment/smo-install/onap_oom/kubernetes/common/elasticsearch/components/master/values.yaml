@@ -22,6 +22,8 @@ global:
     backup:
       mountPath: /dockerdata-nfs/backup
     storageClass:
+  serviceMesh:
+    enabled: false
 
 #################################################################
 # Application configuration defaults.
@@ -106,13 +108,13 @@ resources:
   ## choice for the user. This also increases chances charts run on environments with little
   ## resources, such as Minikube.
   limits:
-    cpu: 250m
-    memory: 1536Mi
-  #   cpu: 100m
-  #   memory: 128Mi
+    cpu: "250m"
+    memory: "1.5Gi"
+  #   cpu: "100m"
+  #   memory: "100Mi"
   requests:
-    cpu: 5m
-    memory: 310Mi
+    cpu: "5m"
+    memory: "300Mi"
 ## Elasticsearch master-eligible container's liveness and readiness probes
 ## ref: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#container-probes
 ##
@@ -170,7 +172,7 @@ service:
   ## list of ports for "common.containerPorts"
   ## Elasticsearch transport port
   ports:
-    - name: http-transport
+    - name: tcp-transport
       port: 9300
   ## master-eligible service type
   ##

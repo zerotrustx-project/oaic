@@ -26,7 +26,7 @@ global:
 # application image
 flavor: small
 
-image: onap/vfc/gvnfmdriver:1.4.3
+image: onap/vfc/gvnfmdriver:1.4.4
 pullPolicy: Always
 
 #Istio sidecar injection policy
@@ -60,7 +60,7 @@ readiness:
 service:
   type: ClusterIP
   name: vfc-generic-vnfm-driver
-  portName: vfc-generic-vnfm-driver
+  portName: http
   externalPort: 8484
   internalPort: 8484
 #  nodePort: 30484
@@ -72,18 +72,18 @@ ingress:
 resources:
   small:
     limits:
-      cpu: 200m
-      memory: 500Mi
+      cpu: "200m"
+      memory: "500Mi"
     requests:
-      cpu: 100m
-      memory: 250Mi
+      cpu: "100m"
+      memory: "200Mi"
   large:
     limits:
-      cpu: 400m
-      memory: 1000Mi
+      cpu: "400m"
+      memory: "1Gi"
     requests:
-      cpu: 200m
-      memory: 500Mi
+      cpu: "200m"
+      memory: "500Mi"
   unlimited: {}
 
 # Log configuration

@@ -18,6 +18,7 @@
 # limitations under the License.
 */}}
 
+{{- if not .Values.global.mariadbGalera.useOperator }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata: {{- include "common.resourceMetadata" . | nindent 2 }}
@@ -78,7 +79,7 @@ spec:
             - -ec
             - |
                 {{- if (not (empty (.Values.galera.bootstrap.bootstrapFromNode | quote)))}}
-                {{- $fullname := include "common.names.fullname" . }}
+                {{- $fullname := include "common.fullname" . }}
                 {{- $bootstrapFromNode := int .Values.galera.bootstrap.bootstrapFromNode }}
                 # Bootstrap from the indicated node
                 NODE_ID="${MY_POD_NAME#"{{ $fullname }}-"}"
@@ -197,12 +198,12 @@ spec:
             - |
               DATA_SOURCE_NAME="$MARIADB_ROOT_USER:$MARIADB_ROOT_PASSWORD@(localhost:3306)/" /bin/mysqld_exporter $MARIADB_METRICS_EXTRA_FLAGS
           ports:
-            - name: metrics
+            - name: tcp-metrics
               containerPort: 9104
           livenessProbe:
             httpGet:
               path: /metrics
-              port: metrics
+              port: tcp-metrics
             initialDelaySeconds: {{ .Values.metrics.livenessProbe.initialDelaySeconds }}
             periodSeconds: {{ .Values.metrics.livenessProbe.periodSeconds }}
             timeoutSeconds: {{ .Values.metrics.livenessProbe.timeoutSeconds }}
@@ -211,7 +212,7 @@ spec:
           readinessProbe:
             httpGet:
               path: /metrics
-              port: metrics
+              port: tcp-metrics
             initialDelaySeconds: {{ .Values.metrics.readinessProbe.initialDelaySeconds }}
             periodSeconds: {{ .Values.metrics.readinessProbe.periodSeconds }}
             timeoutSeconds: {{ .Values.metrics.readinessProbe.timeoutSeconds }}
@@ -220,8 +221,7 @@ spec:
           {{ include "common.containerSecurityContext" . | indent 10 | trim }}
           resources: {{- toYaml .Values.metrics.resources | nindent 12 }}
         {{- end }}
-      imagePullSecrets:
-        - name: {{ include "common.namespace" . }}-docker-registry-key
+      {{- include "common.imagePullSecrets" . | nindent 6 }}
       {{- if .Values.schedulerName }}
       schedulerName: {{ .Values.schedulerName | quote }}
       {{- end }}
@@ -265,4 +265,5 @@ spec:
 {{- else if and .Values.persistence.enabled (not .Values.persistence.existingClaim) }}
   volumeClaimTemplates:
     - {{ include "common.PVCTemplate" (dict "dot" . "suffix" "data" "persistenceInfos" .Values.persistence) | indent 6 | trim }}
+{{- end }}
 {{- end }}

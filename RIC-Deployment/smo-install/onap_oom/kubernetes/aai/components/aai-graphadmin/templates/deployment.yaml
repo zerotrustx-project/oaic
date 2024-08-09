@@ -6,6 +6,7 @@
 # Copyright (c) 2018 AT&T Intellectual Property. All rights reserved.
 # Copyright (c) 2020 Nokia Intellectual Property. All rights reserved.
 # Copyright (c) 2020-2021 Orange Intellectual Property. All rights reserved.
+# Modifications Copyright © 2023 Nordix Foundation
 # ================================================================================
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,11 +28,18 @@ metadata:
   namespace: {{ include "common.namespace" . }}
   labels:
     app: {{ include "common.name" . }}
+    app.kubernetes.io/name: {{ include "common.name" . }}
+    {{- if .Chart.AppVersion }}
+    version: "{{ .Chart.AppVersion | replace "+" "_" }}"
+    {{- else }}
+    version: "{{ .Chart.Version | replace "+" "_" }}"
+    {{- end }}
     chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
     release: {{ include "common.release" . }}
     heritage: {{ .Release.Service }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
   minReadySeconds: {{ .Values.minReadySeconds }}
   strategy:
     type: {{ .Values.updateStrategy.type }}
@@ -46,6 +54,12 @@ spec:
       labels:
         app: {{ include "common.name" . }}
         release: {{ include "common.release" . }}
+        app.kubernetes.io/name: {{ include "common.name" . }}
+        {{- if .Chart.AppVersion }}
+        version: "{{ .Chart.AppVersion | replace "+" "_" }}"
+        {{- else }}
+        version: "{{ .Chart.Version | replace "+" "_" }}"
+        {{- end }}
       name: {{ include "common.name" . }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
@@ -53,49 +67,7 @@ spec:
       hostname: aai-graphadmin
       terminationGracePeriodSeconds: {{ .Values.service.terminationGracePeriodSeconds }}
     {{ if .Values.global.initContainers.enabled }}
-      initContainers: {{ include "common.certInitializer.initContainer" . | nindent 6 }}
-      {{- if .Values.global.aafEnabled }}
-      - command:
-        - sh
-        args:
-        - -c
-        - |
-          echo "*** retrieve Truststore and Keystore password"
-          export $(cat {{ .Values.certInitializer.appMountPath }}/local/mycreds.prop | xargs -0)
-          echo "*** obfuscate them "
-          export KEYSTORE_PASSWORD=`java -cp /usr/local/jetty/lib/jetty-util-9.4.45.v20220203.jar org.eclipse.jetty.util.security.Password ${KEYSTORE_PLAIN_PASSWORD} 2>&1 | grep "OBF:"`
-          export KEYSTORE_JKS_PASSWORD=`java -cp /usr/local/jetty/lib/jetty-util-9.4.45.v20220203.jar org.eclipse.jetty.util.security.Password ${KEYSTORE_JKS_PLAIN_PASSWORD} 2>&1 | grep "OBF:"`
-          export TRUSTSTORE_PASSWORD=`java -cp /usr/local/jetty/lib/jetty-util-9.4.45.v20220203.jar org.eclipse.jetty.util.security.Password ${TRUSTSTORE_PLAIN_PASSWORD} 2>&1 | grep "OBF:"`
-          echo "KEYSTORE_PASSWORD=${KEYSTORE_PASSWORD}" >> {{ .Values.certInitializer.appMountPath }}/local/mycreds.prop
-          echo "KEYSTORE_JKS_PASSWORD=${KEYSTORE_JKS_PASSWORD}" >> {{ .Values.certInitializer.appMountPath }}/local/mycreds.prop
-          echo "TRUSTSTORE_PASSWORD=${TRUSTSTORE_PASSWORD}" >> {{ .Values.certInitializer.appMountPath }}/local/mycreds.prop
-        image: {{ include "repositoryGenerator.image.jetty" . }}
-        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
-        name: {{ include "common.name" . }}-obfuscate
-        volumeMounts: {{ include "common.certInitializer.volumeMount" . | nindent 8 }}
-        securityContext:
-          runAsUser: {{ .Values.securityContext.user_id }}
-      - command:
-        - sh
-        args:
-        - -c
-        - |
-          echo "*** Set obfuscated Truststore and Keystore password into configuration file"
-          export $(cat {{ .Values.certInitializer.appMountPath }}/local/mycreds.prop | xargs -0)
-          cd /config-input
-          for PFILE in `ls -1`
-          do
-            envsubst <${PFILE} >/config/${PFILE}
-          done
-        volumeMounts: {{ include "common.certInitializer.volumeMount" . | nindent 8 }}
-        - mountPath: /config-input
-          name: properties-input
-        - mountPath: /config
-          name: properties
-        image: {{ include "repositoryGenerator.image.envsubst" . }}
-        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
-        name: {{ include "common.name" . }}-update-config
-      {{- end }}
+      initContainers:
       - command:
       {{ if .Values.global.jobs.migration.enabled }}
         - /app/ready.py
@@ -110,13 +82,9 @@ spec:
       {{  else }}
         - /app/ready.py
         args:
-        - --container-name
-        {{- if .Values.global.cassandra.localCluster }}
-        - aai-cassandra
-        {{- else }}
-        - cassandra
-        {{- end }}
-        - --container-name
+        - --service-name
+        - {{ .Values.global.cassandra.serviceName }}
+        - --service-name
         - aai-schema-service
       {{  end  }}
         env:
@@ -128,6 +96,13 @@ spec:
         image: {{ include "repositoryGenerator.image.readiness" . }}
         imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
         name: {{ include "common.name" . }}-readiness
+        resources:
+          limits:
+            cpu: "100m"
+            memory: "500Mi"
+          requests:
+            cpu: "3m"
+            memory: "20Mi"
       {{  end  }}
       containers:
       - name: {{ include "common.name" . }}
@@ -139,13 +114,27 @@ spec:
         - name: LOCAL_GROUP_ID
           value: {{ .Values.securityContext.group_id | quote }}
         - name: INTERNAL_PORT_1
-          value: {{ .Values.service.internalPort | quote }}
+          value: {{ .Values.service.appPort | quote }}
         - name: INTERNAL_PORT_2
-          value: {{ .Values.service.internalPort2 | quote }}
-        volumeMounts: {{ include "common.certInitializer.volumeMount" . | nindent 8 }}
-        - mountPath: /etc/localtime
-          name: localtime
-          readOnly: true
+          value: {{ .Values.service.debugPort | quote }}
+        - name: INTERNAL_PORT_3
+          value: {{ .Values.service.internalPort3 | quote }}
+        - name: BOOTSTRAP_SERVERS
+          value: {{ include "common.release" . }}-strimzi-kafka-bootstrap:9092
+        - name: JAAS_CONFIG
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "common.release" . }}-{{ .Values.global.aaiGraphKafkaUser }}
+              key: sasl.jaas.config
+        {{- if .Values.config.profiling.enabled }}
+        - name: PRE_JVM_ARGS
+          value: '{{ join " " .Values.config.profiling.args }}'
+        {{- end }}
+        {{- if .Values.config.debug.enabled }}
+        - name: POST_JVM_ARGS
+          value: {{ .Values.config.debug.args | quote }}
+        {{- end }}
+        volumeMounts:
         - mountPath: /opt/app/aai-graphadmin/resources/etc/appprops/janusgraph-realtime.properties
           name: config
           subPath: janusgraph-realtime.properties
@@ -170,8 +159,18 @@ spec:
           name: properties
           subPath: application.properties
         ports:
-        - containerPort: {{ .Values.service.internalPort }}
-        - containerPort: {{ .Values.service.internalPort2 }}
+        - containerPort: {{ .Values.service.appPort }}
+          name: {{ .Values.service.appPortName }}
+        {{- if .Values.config.debug.enabled }}
+        - containerPort: {{ .Values.service.debugPort }}
+          name: {{ .Values.service.debugPortName }}
+        {{- end }}
+        {{- if .Values.config.profiling.enabled }}
+        - containerPort: {{ .Values.service.profilingPort }}
+          name: {{ .Values.service.profilingPortName }}
+        {{- end }}
+        - containerPort: {{ .Values.service.internalPort3 }}
+          name: {{ .Values.service.portName3 }}
         lifecycle:
           # wait for active requests (long-running tasks) to be finished
           # Before the SIGTERM is invoked, Kubernetes exposes a preStop hook in the Pod.
@@ -181,25 +180,25 @@ spec:
                 - sh
                 - -c
                 - |
-                  while (netstat -an | grep ESTABLISHED | grep -e $INTERNAL_PORT_1 -e $INTERNAL_PORT_2)
-                  do sleep 10
+                  while (netstat -an | grep ESTABLISHED | grep -e $INTERNAL_PORT_1 -e $INTERNAL_PORT_2) do
+                    echo "Still active connections. Waiting for active requests to be finished"
+                    sleep 3
                   done
-        # disable liveness probe when breakpoints set in debugger
-        # so K8s doesn't restart unresponsive container
-        {{ if .Values.liveness.enabled }}
+        # disable liveness probe when
+        # debugging.enabled=true or profiling.enabled=true
+        {{- if and .Values.liveness.enabled (not (or .Values.config.debug.enabled .Values.config.profiling.enabled)) }}
         livenessProbe:
           tcpSocket:
-            port: {{ .Values.service.internalPort }}
+            port: {{ .Values.service.appPort }}
           initialDelaySeconds: {{ .Values.liveness.initialDelaySeconds }}
           periodSeconds: {{ .Values.liveness.periodSeconds }}
         {{ end }}
         readinessProbe:
           tcpSocket:
-            port: {{ .Values.service.internalPort }}
+            port: {{ .Values.service.appPort }}
           initialDelaySeconds: {{ .Values.readiness.initialDelaySeconds }}
           periodSeconds: {{ .Values.readiness.periodSeconds }}
-        resources:
-{{ include "common.resources" . }}
+        resources: {{ include "common.resources" . | nindent 10 }}
       {{- if .Values.nodeSelector }}
       nodeSelector:
 {{ toYaml .Values.nodeSelector | indent 8 }}
@@ -212,10 +211,7 @@ spec:
       # side car containers
       {{ include "common.log.sidecar" . | nindent 6 }}
       serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
-      volumes: {{ include "common.certInitializer.volumes" . | nindent 6 }}
-      - name: localtime
-        hostPath:
-          path: /etc/localtime
+      volumes:
       - name: logs
         emptyDir: {}
       {{ include "common.log.volumes" (dict "dot" . "configMapNamePrefix" (tpl .Values.logConfigMapNamePrefix .)) | nindent 6 }}
@@ -223,13 +219,7 @@ spec:
         configMap:
           name: {{ include "common.fullname" . }}
       - name: properties
-      {{- if .Values.global.aafEnabled }}
-        emptyDir:
-          medium: Memory
-      - name: properties-input
-      {{- end }}
         configMap:
           name: {{ include "common.fullname" . }}-properties
       restartPolicy: {{ .Values.restartPolicy }}
-      imagePullSecrets:
-      - name: {{ include "common.namespace" . }}-docker-registry-key
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

@@ -22,20 +22,15 @@ global:
 # Application configuration defaults.
 #################################################################
 # application image
-image: onap/multicloud/openstack-pike:1.5.6
+image: onap/multicloud/openstack-pike:1.5.7
 pullPolicy: Always
-
-#Istio sidecar injection policy
-istioSidecar: true
 
 # application configuration
 config:
-  ssl_enabled: false
-  msbprotocol: https
   msbgateway: msb-iag
-  msbPort: 443
+  msbPort: 80
   aai:
-    port: 8443
+    aaiPort: 80
     schemaVersion: v13
     username: AAI
     password: AAI
@@ -57,15 +52,41 @@ liveness:
   enabled: true
 
 service:
-  type: ClusterIP
-  name: multicloud-pike
-  portName: multicloud-pike
-  externalPort: 9007
+  type: NodePort
   internalPort: 9007
-  nodePort: 96
+  ports:
+    - name: http
+      port: 9007
+      nodePort: '96'
+  annotations:
+    msb.onap.org/service-info: |
+      {{ if .Values.global.msbEnabled -}}[
+        {
+          "serviceName": "multicloud-pike",
+          "version": "v0",
+          "url": "/api/multicloud-pike/v0",
+          "protocol": "REST",
+          "port": "{{ .Values.service.internalPort }}",
+          "enable_ssl": false,
+          "visualRange": "1"
+        },
+        {
+          "serviceName": "multicloud-pike",
+          "version": "v1",
+          "url": "/api/multicloud-pike/v1",
+          "protocol": "REST",
+          "port": "{{ .Values.service.internalPort }}",
+          "enable_ssl": false,
+          "visualRange": "1"
+        }
+      ]{{ end }}
 
 ingress:
   enabled: false
+  service:
+    - baseaddr: 'multicloud-pike-api'
+      name: 'multicloud-pike'
+      port: 9007
 
 # Resource Limit flavor -By Default using small
 flavor: small
@@ -73,19 +94,22 @@ flavor: small
 resources:
   small:
     limits:
-      cpu: 1
-      memory: 4Gi
+      cpu: "1"
+      memory: "4Gi"
     requests:
-      cpu: 10m
-      memory: 1Gi
+      cpu: "10m"
+      memory: "1Gi"
   large:
     limits:
-      cpu: 2
-      memory: 8Gi
+      cpu: "2"
+      memory: "8Gi"
     requests:
-      cpu: 20m
-      memory: 2Gi
+      cpu: "20m"
+      memory: "2Gi"
   unlimited: {}
+
+# memcached image resource
+memcached: memcached:alpine3.15
 
 #Pods Service Account
 serviceAccount:

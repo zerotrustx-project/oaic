@@ -16,26 +16,22 @@
 # Global configuration defaults.
 #################################################################
 global:
-  aafEnabled: true
   nodePortPrefix: 322
-  k8scluster: svc.cluster.local
+
 #################################################################
 # Application configuration defaults.
 #################################################################
 # application image
-image: "onap/sdnc-web-image:2.2.5"
+image: "onap/sdnc-web-image:2.6.1"
 pullPolicy: Always
 
 config:
   sdncChartName: sdnc
-  webProtocol: HTTPS
-  webPort: 8443
-  sdnrProtocol: https
+  webProtocol: HTTP
+  webPort: 8080
+  sdnrProtocol: http
   sdnrHost: "sdnc"
-  sdnrPort: "8443"
-  sslCertDir: "/opt/app/osaaf/local/certs"
-  sslCertiticate: "cert.pem"
-  sslCertKey: "key.pem"
+  sdnrPort: "8282"
   oauth:
     enabled: false
     odluxRbac:
@@ -47,31 +43,6 @@ config:
     enabled: false
     topologyserverUrl: http://toplogy-api-service.topology:3001
     tileserverUrl: https://tile.openstreetmap.org
-
-
-#################################################################
-# aaf configuration defaults.
-#################################################################
-certInitializer:
-  nameOverride: sdnc-web-cert-initializer
-  fqdn: "sdnc"
-  app_ns: "org.osaaf.aaf"
-  fqi: "sdnc@sdnc.onap.org"
-  fqi_namespace: "org.onap.sdnc"
-  public_fqdn: "sdnc.onap.org"
-  aafDeployFqi: "deployer@people.osaaf.org"
-  aafDeployPass: demo123456!
-  cadi_latitude: "38.0"
-  cadi_longitude: "-72.0"
-  credsPath: /opt/app/osaaf/local
-  aaf_add_config: >
-    cd /opt/app/osaaf/local;
-    mkdir -p certs;
-    export $(/opt/app/aaf_config/bin/agent.sh local showpass | grep '^c' | xargs -0);
-    keytool -exportcert -rfc -file certs/cacert.pem -keystore {{ .Values.fqi_namespace }}.trust.jks -alias ca_local_0 -storepass $cadi_truststore_password;
-    openssl pkcs12 -in {{ .Values.fqi_namespace }}.p12 -out certs/cert.pem -passin pass:$cadi_keystore_password_p12 -passout pass:$cadi_keystore_password_p12;
-    cp {{ .Values.fqi_namespace }}.key certs/key.pem;
-    chmod -R 755 certs;
 
 # default number of instances
 replicaCount: 1
@@ -94,19 +65,27 @@ readiness:
 
 service:
   name: sdnc-web
-  suffix: service
   type: NodePort
-  sessionAffinity: ClientIP
   # for liveness and readiness probe only
   # internalPort:
-  internalPort: 8443
+  internalPort: 8080
   ports:
-  - name: "sdnc-web"
-    port: "8443"
+  - name: http
+    port: "8080"
     nodePort: "05"
 
-#ingress:
-#  enabled: false
+ingress:
+  enabled: false
+  service:
+  - baseaddr: "sdnc-web-ui"
+    name: "sdnc-web"
+    port: 8080
+
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: istio-ingress
+        namespace: istio-ingress
 
 #Resource limit flavor -By default using small
 flavor: small
@@ -114,18 +93,18 @@ flavor: small
 resources:
   small:
     limits:
-      cpu: 1
-      memory: 1Gi
+      cpu: "1"
+      memory: "500Mi"
     requests:
-      cpu: 0.5
-      memory: 500Mi
+      cpu: "0.5"
+      memory: "500Mi"
   large:
     limits:
-      cpu: 2
-      memory: 2Gi
+      cpu: "2"
+      memory: "1Gi"
     requests:
-      cpu: 1
-      memory: 1Gi
+      cpu: "1"
+      memory: "1Gi"
   unlimited: {}
 
 #Pods Service Account

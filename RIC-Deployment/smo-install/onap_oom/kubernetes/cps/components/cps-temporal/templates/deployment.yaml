@@ -1,6 +1,7 @@
 {{/*
 # ============LICENSE_START=======================================================
 #  Copyright (c) 2021 Bell Canada.
+# Modifications Copyright © 2022-2023 Nordix Foundation
 # ================================================================================
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -53,6 +54,11 @@ spec:
             {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "app-user-creds" "key" "login") | indent 12 }}
           - name: APP_PASSWORD
             {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "app-user-creds" "key" "password") | indent 12 }}
+          - name: SASL_JAAS_CONFIG
+            valueFrom:
+              secretKeyRef:
+                name: {{ include "common.name" . }}-ku
+                key: sasl.jaas.config
         volumeMounts:
           - mountPath: /config-input
             name: init-data-input
@@ -108,6 +114,4 @@ spec:
             medium: Memory
         - name: init-temp
           emptyDir: {}
-      imagePullSecrets:
-        - name: "{{ include "common.namespace" . }}-docker-registry-key"
-
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

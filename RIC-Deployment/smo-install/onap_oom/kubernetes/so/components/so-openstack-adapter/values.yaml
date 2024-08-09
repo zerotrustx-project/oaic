@@ -19,14 +19,10 @@ global:
   nodePortPrefixExt: 304
   persistence:
     mountPath: /dockerdata-nfs
-  security:
-    aaf:
-      enabled: false
-  aaf:
-    auth:
-      encrypted: 3EDC974C5CD7FE54C47C7490AF4D3B474CDD7D0FFA35A7ACDE3E209631E45F428976EAC0858874F17390A13149E63C90281DD8D20456
   mariadbGalera:
-    serviceName: mariadb-galera
+    # flag to enable the DB creation via mariadb-operator
+    useOperator: true
+    service: mariadb-galera
     servicePort: '3306'
 
 readinessCheck:
@@ -58,8 +54,17 @@ secrets:
 #################################################################
 # Application configuration defaults.
 #################################################################
-image: onap/so/openstack-adapter:1.9.2
+image: onap/so/openstack-adapter:1.12.2
 pullPolicy: Always
+
+# Local mariadb galera instance default name
+mariadb-galera:
+  nameOverride: so-mariadb-galera
+  service:
+    internalPort: 3306
+  mariadbOperator:
+    galera:
+      enabled: false
 
 db:
   userName: so_user
@@ -71,9 +76,6 @@ db:
 
 aai:
   auth: 2A11B07DB6214A839394AA1EC5844695F5114FC407FF5422625FB00175A3DCB8A1FF745F22867EFA72D5369D599BBD88DA8BED4233CF5586
-aaf:
-  auth:
-    encrypted: 7F182B0C05D58A23A1C4966B9CDC9E0B8BC5CD53BC8C7B4083D869F8D53E9BDC3EFD55C94B1D3F
 org:
   onap:
     so:
@@ -92,25 +94,19 @@ containerPort: &containerPort 8087
 logPath: ./logs/openstack/
 app: openstack-adapter
 service:
-    type: ClusterIP
-    internalPort: *containerPort
-    externalPort: *containerPort
-    portName: so-optack-port
+  type: ClusterIP
+  ports:
+    - name: http
+      port: *containerPort
 updateStrategy:
-    type: RollingUpdate
-    maxUnavailable: 1
-    maxSurge: 1
+  type: RollingUpdate
+  maxUnavailable: 1
+  maxSurge: 1
 
 #################################################################
-# soHelper part
+# soHelpers part
 #################################################################
 soHelpers:
-  nameOverride: so-openstack-cert-init
-  certInitializer:
-    nameOverride: so-openstack-cert-init
-    credsPath: /opt/app/osaaf/local
-  cadi:
-    apiEnforcement: org.onap.so.openStackAdapterPerm
   containerPort: *containerPort
 
 # Resource Limit flavor -By Default using small
@@ -119,30 +115,36 @@ flavor: small
 resources:
   small:
     limits:
-      memory: 4Gi
-      cpu: 2000m
+      cpu: "1"
+      memory: "1.5Gi"
     requests:
-      memory: 1Gi
-      cpu: 500m
+      cpu: "0.5"
+      memory: "1.5Gi"
   large:
     limits:
-      memory: 8Gi
-      cpu: 4000m
+      cpu: "2"
+      memory: "3Gi"
     requests:
-      memory: 2Gi
-      cpu: 1000m
+      cpu: "1"
+      memory: "3Gi"
   unlimited: {}
 livenessProbe:
-    path: /manage/health
-    port: 8087
-    scheme: HTTP
-    initialDelaySeconds: 600
-    periodSeconds: 60
-    timeoutSeconds: 10
-    successThreshold: 1
-    failureThreshold: 3
+  path: /manage/health
+  port: 8087
+  scheme: HTTP
+  initialDelaySeconds: 600
+  periodSeconds: 60
+  timeoutSeconds: 10
+  successThreshold: 1
+  failureThreshold: 3
 ingress:
   enabled: false
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: robot-read
+      - serviceAccount: so-bpmn-infra-read
+      - serviceAccount: so-read
 config:
   openStackUserName: "vnf_user"
   openStackRegion: "RegionOne"

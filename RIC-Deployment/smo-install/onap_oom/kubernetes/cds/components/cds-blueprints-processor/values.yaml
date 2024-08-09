@@ -1,5 +1,6 @@
 # Copyright (c) 2019 IBM, Bell Canada
 # Copyright (c) 2020 Samsung Electronics
+# Modification Copyright © 2022-2023 Nordix Foundation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,22 +18,30 @@
 # Global configuration defaults.
 #################################################################
 global:
-  # Change to an unused port prefix range to prevent port conflicts
-  # with other instances running within the same k8s cluster
-  nodePortPrefixExt: 304
-
+  mariadbGalera: &mariadbGalera
+    # flag to enable the DB creation via mariadb-operator
+    useOperator: true
+    #This flag allows NBI to instantiate its own mariadb-galera cluster
+    #When changing it to "true", also set "globalCluster: false"
+    #as the dependency check will not work otherwise (Chart.yaml)
+    localCluster: true
+    globalCluster: false
+    service: mariadb-galera
+    internalPort: 3306
+    nameOverride: mariadb-galera
   # image pull policy
   pullPolicy: Always
-
   persistence:
     mountPath: /dockerdata-nfs
-
-  #This configuration specifies Service and port for SDNC OAM interface
+  # This configuration specifies Service and port for SDNC OAM interface
   sdncOamService: sdnc-oam
   sdncOamPort: 8282
-
-  #AAF is enabled by default
-  #aafEnabled: true
+  # This concerns CDS/AAI communication through HTTP when TLS is not being needed
+  # Port value should match the one in aai/values.yml : service.externalPlainPort
+  aaiData:
+    ExternalPlainPort: 80 # when TLS is not needed
+    ServiceName: aai  # domain
+    # http://aai:80 or https://aai:443
 
   #enable importCustomCerts to add custom CA to blueprint processor pod
   #importCustomCertsEnabled: true
@@ -57,37 +66,18 @@ secrets:
     externalSecret: '{{ tpl (default "" .Values.config.sdncDB.dbRootPassExternalSecret) . }}'
     password: '{{ .Values.config.sdncDB.dbRootPass }}'
     passwordPolicy: required
-
-#################################################################
-# AAF part
-#################################################################
-certInitializer:
-  nameOverride: cds-blueprints-processor-cert-initializer
-  aafDeployFqi: deployer@people.osaaf.org
-  aafDeployPass: demo123456!
-  # aafDeployCredsExternalSecret: some secret
-  fqdn: sdnc-cds
-  fqi: sdnc-cds@sdnc-cds.onap.org
-  public_fqdn: sdnc-cds.onap.org
-  cadi_longitude: "0.0"
-  cadi_latitude: "0.0"
-  app_ns: org.osaaf.aaf
-  credsPath: /opt/app/osaaf/local
-  fqi_namespace: org.onap.sdnc-cds
-  #enable below if we need custom CA to be added to blueprint processor pod
-  #importCustomCertsEnabled: true
-  #truststoreMountpath: /opt/onap/cds
-  #truststoreOutputFileName: truststoreONAPall.jks
-  aaf_add_config: >
-    /opt/app/aaf_config/bin/agent.sh;
-    /opt/app/aaf_config/bin/agent.sh local showpass
-    {{.Values.fqi}} {{ .Values.fqdn }} > {{ .Values.credsPath }}/mycreds.prop
+  - uid: cps-creds
+    type: basicAuth
+    externalSecret: '{{ tpl (default "" .Values.config.cps.cpsUserExternalSecret) . }}'
+    login: '{{ .Values.config.cps.cpsUsername }}'
+    password: '{{ .Values.config.cps.cpsPassword }}'
+    passwordPolicy: required
 
 #################################################################
 # Application configuration defaults.
 #################################################################
 # application image
-image: onap/ccsdk-blueprintsprocessor:1.2.1
+image: onap/ccsdk-blueprintsprocessor:1.5.3
 pullPolicy: Always
 
 # flag to enable debugging - application support required
@@ -100,7 +90,7 @@ config:
     dbService: mariadb-galera
     dbPort: 3306
     dbName: sdnctl
-    #dbRootPass: Custom root password
+    # dbRootPass: Custom root password
     dbRootPassExternalSecret: '{{ include "common.mariadb.secret.rootPassSecretName" ( dict "dot" . "chartName" .Values.config.sdncDB.dbService ) }}'
   cdsDB:
     dbServer: cds-db
@@ -111,6 +101,10 @@ config:
     # dbCredsExternalSecret: <some secret name>
     # dbRootPassword: password
     # dbRootPassExternalSecret
+  cps:
+    cpsUsername: ''
+    cpsPassword: ''
+    cpsUserExternalSecret: '{{ include "common.release" . }}-cps-core-app-user-creds'
 
 # default number of instances
 replicaCount: 1
@@ -119,46 +113,67 @@ nodeSelector: {}
 
 affinity: {}
 
-# flag for kafka-listener dependency. Set to true if you are using message-router otherwise set to false if you are using
-# custom kafka cluster.
-dmaapEnabled: true
+# Strimzi KafkaUser config
+kafkaUser:
+  acls:
+    - name: cds-bp-processor
+      type: group
+      operations: [Read]
+    - name: cds.blueprint-processor
+      type: topic
+      patternType: prefix
+      operations: [Read, Write]
+# Strimzi KafkaTopic config
+kafkaTopic:
+  - name: cds.blueprint-processor.self-service-api.request
+  - name: cds.blueprint-processor.self-service-api.response
+  - name: cds.blueprint-processor.self-service-api.audit.request
+  - name: cds.blueprint-processor.self-service-api.audit.response
 
+
+containerHttpPort: &svc_http_port 8080
+containerGrpcPort: &svc_grpc_port 9111
+containerTcpPort: &svc_tcp_port 5701
+
+service:
+  http:
+    type: ClusterIP
+    portName: http
+    internalPort: *svc_http_port
+    externalPort: *svc_http_port
+  grpc:
+    type: ClusterIP
+    portName: grpc
+    internalPort: *svc_grpc_port
+    externalPort: *svc_grpc_port
+  cluster:
+    type: ClusterIP
+    portName: tcp-cluster
+    internalPort: *svc_tcp_port
+    externalPort: *svc_tcp_port
+  port: *svc_http_port
 
 # probe configuration parameters
 startup:
   initialDelaySeconds: 10
   failureThreshold: 30
   periodSeconds: 10
+  port: *svc_http_port
 
 liveness:
-  initialDelaySeconds: 0
+  initialDelaySeconds: 1
   periodSeconds: 20
-  timeoutSeconds: 20
+  timeoutSeconds: 30
   # necessary to disable liveness probe when setting breakpoints
   # in debugger so K8s doesn't restart unresponsive container
-  enabled: true
+  enabled: false
+  port: *svc_http_port
 
 readiness:
   initialDelaySeconds: 120
   periodSeconds: 10
   timeoutSeconds: 20
-
-service:
-  http:
-    type: ClusterIP
-    portName: blueprints-processor-http
-    internalPort: 8080
-    externalPort: 8080
-  grpc:
-    type: ClusterIP
-    portName: blueprints-processor-grpc
-    internalPort: 9111
-    externalPort: 9111
-  cluster:
-    type: ClusterIP
-    portName: blueprints-processor-cluster
-    internalPort: 5701
-    externalPort: 5701
+  port: *svc_http_port
 
 persistence:
   volumeReclaimPolicy: Retain
@@ -171,9 +186,7 @@ persistence:
 cluster:
   # Cannot have cluster enabled if the replicaCount is not at least 3
   enabled: false
-
   clusterName: cds-cluster
-
   # Defines the number of node to be part of the CP subsystem/raft algorithm. This value should be
   # between 3 and 7 only.
   groupSize: 3
@@ -181,11 +194,11 @@ cluster:
 ingress:
   enabled: false
   service:
-    - baseaddr: "blueprintsprocessorhttp"
+    - baseaddr: "cds-blueprintsprocessor-api"
       name: "cds-blueprints-processor-http"
       port: 8080
-  config:
-    ssl: "none"
+      config:
+        ssl: "none"
 
 logback:
   rootLogLevel: INFO
@@ -201,19 +214,24 @@ flavor: small
 resources:
   small:
     limits:
-      cpu: 2
-      memory: 4Gi
+      cpu: "1"
+      memory: "1.8Gi"
     requests:
-      cpu: 1
-      memory: 1Gi
+      cpu: "0.5"
+      memory: "1.8Gi"
   large:
     limits:
-      cpu: 4
-      memory: 8Gi
+      cpu: "2"
+      memory: "3.6Gi"
     requests:
-      cpu: 2
-      memory: 4Gi
+      cpu: "1"
+      memory: "3.6Gi"
   unlimited: {}
+
+readinessCheck:
+  wait_for:
+    services:
+      - '{{ .Values.global.mariadbGalera.service }}'
 
 #Pods Service Account
 serviceAccount:
@@ -224,3 +242,11 @@ serviceAccount:
 # workflow store flag
 workflow:
   storeEnabled: false
+
+tracing:
+  collector:
+    baseUrl: http://jaeger-collector.istio-system:9411
+  sampling:
+    probability: 1.0 # percentage of requests that are sampled (between 0-1/0%-100%)
+  ignorePatterns:
+    - .*/execution-service/health-check

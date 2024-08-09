@@ -18,6 +18,8 @@
 global:
   nodePortPrefix: 302
   mariadbGalera:
+    # flag to enable the DB creation via mariadb-operator
+    useOperator: true
     #This flag allows SO to instantiate its own mariadb-galera cluster
     #If shared instance is used, this chart assumes that DB already exists
     localCluster: false
@@ -49,7 +51,7 @@ secrets:
 # Application configuration defaults.
 #################################################################
 # application image
-image: onap/sdnc-dmaap-listener-image:2.2.5
+image: onap/sdnc-dmaap-listener-image:2.6.1
 pullPolicy: Always
 
 # flag to enable debugging - application support required
@@ -81,6 +83,9 @@ mariadb-galera:
   persistence:
     enabled: true
     mountSubPath: dmaap-listener/maria/data
+  mariadbOperator:
+    galera:
+      enabled: false
 
 # default number of instances
 replicaCount: 1
@@ -105,7 +110,17 @@ ingress:
   enabled: false
 
 service:
+  type: ClusterIP
   name: sdnc-dmaap-listener
+  internalPort: 80
+  ports:
+    - name: http
+      port: 80
+
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: message-router-read
 
 #Resource limit flavor -By default using small
 flavor: small
@@ -114,18 +129,18 @@ flavor: small
 resources:
   small:
     limits:
-      cpu: 2
-      memory: 2Gi
+      cpu: "1"
+      memory: "1Gi"
     requests:
-      cpu: 100m
-      memory: 1Gi
+      cpu: "0.5"
+      memory: "1Gi"
   large:
     limits:
-      cpu: 2
-      memory: 4Gi
+      cpu: "2"
+      memory: "2Gi"
     requests:
-      cpu: 1
-      memory: 2Gi
+      cpu: "1"
+      memory: "2Gi"
   unlimited: {}
 
 #Pods Service Account

@@ -57,7 +57,7 @@ service:
 ingress:
   enabled: false
   service:
-    - baseaddr: "msbconsul"
+    - baseaddr: "msb-consul-api"
       name: "msb-consul"
       port: 8500
   config:
@@ -69,18 +69,18 @@ flavor: small
 resources:
   small:
     limits:
-      cpu: 20m
-      memory: 100Mi
+      cpu: "1"
+      memory: "500Mi"
     requests:
-      cpu: 10m
-      memory: 50Mi
+      cpu: "0.5"
+      memory: "500Mi"
   large:
     limits:
-      cpu: 40m
-      memory: 200Mi
+      cpu: "2"
+      memory: "1Gi"
     requests:
-      cpu: 20m
-      memory: 100Mi
+      cpu: "1"
+      memory: "1Gi"
   unlimited: {}
 
 securityContext:

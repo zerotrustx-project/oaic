@@ -17,7 +17,6 @@
 # Global configuration defaults.
 #################################################################
 global:
-  aafEnabled: true
   nodePortPrefix: 302
   clusterName: cluster.local
 
@@ -95,11 +94,11 @@ resources:
   ## choice for the user. This also increases chances charts run on environments with little
   ## resources, such as Minikube.
   limits: {}
-  #   cpu: 100m
-  #   memory: 128Mi
+  #   cpu: "100m"
+  #   memory: "100Mi"
   requests:
-    cpu: 25m
-    memory: 256Mi
+    cpu: "25m"
+    memory: "200Mi"
 ## Elasticsearch coordinating-only container's liveness and readiness probes
 ## ref: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#container-probes
 ##
@@ -148,7 +147,7 @@ nginx:
   service:
     name: nginx
     ports:
-    - name: elasticsearch
+    - name: http-es
       port: 8080
 ## Custom server block to be added to NGINX configuration
 ## PHP-FPM example server block:
@@ -230,7 +229,7 @@ service:
   ##
   type: ClusterIP
   headlessPorts:
-  - name: http-transport
+  - name: tcp-transport
     port: 9300
   headless:
     suffix: discovery
@@ -240,7 +239,7 @@ service:
   ## Elasticsearch tREST API port
   ##
   ports:
-  - name: elasticsearch
+  - name: http-es
     port: 9200
 
 
@@ -259,30 +258,6 @@ service:
   # loadBalancerIP:
   ## Provide functionality to use RBAC
   ##
-
-#################################################################
-# Certificate configuration
-#################################################################
-certInitializer:
-  nameOverride: elasticsearch-cert-initializer
-  aafDeployFqi: deployer@people.osaaf.org
-  aafDeployPass: demo123456!
-  # aafDeployCredsExternalSecret: some secret
-  fqdn: "elastic"
-  app_ns: "org.osaaf.aaf"
-  fqi_namespace: "org.onap.elastic"
-  fqi: "elastic@elastic.onap.org"
-  public_fqdn: "aaf.osaaf.org"
-  cadi_longitude: "0.0"
-  cadi_latitude: "0.0"
-  credsPath: /opt/app/osaaf/local
-  aaf_add_config: >
-    cd {{ .Values.credsPath }};
-    mkdir -p certs;
-    keytool -exportcert -rfc -file certs/cacert.pem -keystore {{ .Values.fqi_namespace }}.trust.jks -alias ca_local_0 -storepass $cadi_truststore_password;
-    openssl pkcs12 -in {{ .Values.fqi_namespace }}.p12 -out certs/cert.pem -passin pass:$cadi_keystore_password_p12 -passout pass:$cadi_keystore_password_p12;
-    cp {{ .Values.fqi_namespace }}.key certs/key.pem;
-    chmod -R 755 certs;
 
 #################################################################
 # subcharts configuration defaults.

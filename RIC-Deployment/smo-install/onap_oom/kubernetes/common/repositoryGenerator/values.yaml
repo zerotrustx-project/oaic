@@ -21,6 +21,7 @@ global:
   elasticRepository: docker.elastic.co
   googleK8sRepository: k8s.gcr.io
   githubContainerRegistry: ghcr.io
+  quayRepository: quay.io
 
   # common global images
   busyboxImage: busybox:1.34.1
@@ -35,13 +36,14 @@ global:
   jreImage: onap/integration-java11:10.0.0
   kubectlImage: bitnami/kubectl:1.22.4
   loggingImage: beats/filebeat:5.5.0
-  mariadbImage: bitnami/mariadb:10.6.5-debian-10-r28
+  mariadbImage: bitnami/mariadb:10.5.8
+  mongodbImage: percona/percona-server-mongodb:7.0.5-3
   nginxImage: bitnami/nginx:1.21.4
   postgresImage: crunchydata/crunchy-postgres:centos8-13.2-4.6.1
-  readinessImage: onap/oom/readiness:3.0.1
+  readinessImage: onap/oom/readiness:6.0.3
   dcaePolicySyncImage: onap/org.onap.dcaegen2.deployments.dcae-services-policy-sync:1.0.1
-  dbcClientImage: onap/dmaap/dbc-client:2.0.9
-  quitQuitImage: onap/oom/readiness:4.1.0
+  drProvClientImage: onap/dmaap/datarouter-prov-client:2.1.15
+  quitQuitImage: onap/oom/readiness:6.0.3
 
   # Default credentials
   # they're optional. If the target repository doesn't need them, comment them
@@ -70,9 +72,10 @@ imageRepoMapping:
   kubectlImage: dockerHubRepository
   loggingImage: elasticRepository
   mariadbImage: dockerHubRepository
+  mongodbImage: dockerHubRepository
   nginxImage: dockerHubRepository
   postgresImage: dockerHubRepository
   readinessImage: repository
   dcaePolicySyncImage: repository
-  dbcClientImage: repository
+  drProvClientImage: repository
   quitQuitImage: repository

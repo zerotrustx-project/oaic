@@ -3,6 +3,7 @@
 # Modifications Copyright © 2020 Nokia
 # Modifications Copyright © 2021 Orange
 # Modifications Copyright © 2021 Nordix Foundation
+# Modifications Copyright © 2024 Deutsche Telekom AG
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,15 +20,18 @@
 apiVersion: v2
 description: ONAP platform components
 name: platform
-version: 10.0.0
+version: 13.0.1
 
 dependencies:
   - name: oom-cert-service
-    version: ~10.x-0
-    repository: 'file://components/oom-cert-service'
+    version: ~13.x-0
+    repository: '@local'
+    condition: oom-cert-service.enabled
   - name: cmpv2-cert-provider
-    version: ~10.x-0
-    repository: 'file://components/cmpv2-cert-provider'
+    version: ~13.x-0
+    repository: '@local'
+    condition: cmpv2-cert-provider.enabled
   - name: chartmuseum
-    version: ~10.x-0
-    repository: 'file://components/chartmuseum'
+    version: ~13.x-0
+    repository: '@local'
+    condition: chartmuseum.enabled

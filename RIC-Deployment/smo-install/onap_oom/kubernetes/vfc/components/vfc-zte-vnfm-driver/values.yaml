@@ -60,7 +60,7 @@ readiness:
 service:
   type: ClusterIP
   name: vfc-zte-vnfm-driver
-  portName: vfc-zte-vnfm-driver
+  portName: http
   externalPort: 8410
   internalPort: 8410
 
@@ -72,18 +72,18 @@ ingress:
 resources:
   small:
     limits:
-      cpu: 100m
-      memory: 500Mi
+      cpu: "100m"
+      memory: "500Mi"
     requests:
-      cpu: 50m
-      memory: 250Mi
+      cpu: "50m"
+      memory: "200Mi"
   large:
     limits:
-      cpu: 200m
-      memory: 1000Mi
+      cpu: "200m"
+      memory: "1Gi"
     requests:
-      cpu: 100m
-      memory: 500Mi
+      cpu: "100m"
+      memory: "500Mi"
   unlimited: {}
 
 # Log configuration

@@ -1,5 +1,6 @@
 # Copyright © 2018 AT&T USA
 # Copyright © 2020 Huawei
+# Copyright © 2024 Deutsche Telekom Intellectual Property. All rights reserved.
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -22,14 +23,10 @@ global:
   #This configuration specifies Service and port for SDNC OAM interface
   sdncOamService: sdnc-oam
   sdncOamPort: 8282
-  security:
-    aaf:
-      enabled: false
-  aaf:
-    auth:
-      encrypted: 3EDC974C5CD7FE54C47C7490AF4D3B474CDD7D0FFA35A7ACDE3E209631E45F428976EAC0858874F17390A13149E63C90281DD8D20456
   mariadbGalera:
-    serviceName: mariadb-galera
+    # flag to enable the DB creation via mariadb-operator
+    useOperator: true
+    service: mariadb-galera
     servicePort: '3306'
 
 readinessCheck:
@@ -63,8 +60,23 @@ secrets:
 #################################################################
 # Application configuration defaults.
 #################################################################
-image: onap/so/bpmn-infra:1.9.2
+image: onap/so/bpmn-infra:1.13.0
 pullPolicy: Always
+
+kafkaUser:
+  acls:
+    - name: so-consumer
+      type: group
+      patternType: literal
+      operations: [Read]
+    - name: unauthenticated.PNF_READY
+      type: topic
+      patternType: literal
+      operations: [Read]
+    - name: unauthenticated.PNF_UPDATE
+      type: topic
+      patternType: literal
+      operations: [Read]
 
 bpmn:
   historyTTL: 14
@@ -72,6 +84,15 @@ bpmn:
 camunda:
   sundayCleanupWindowStartTime: "04:00"
   sundayCleanupWindowEndTime: "10:00"
+
+# Local mariadb galera instance default name
+mariadb-galera:
+  nameOverride: so-mariadb-galera
+  service:
+    internalPort: 3306
+  mariadbOperator:
+    galera:
+      enabled: false
 
 db:
   userName: so_user
@@ -121,24 +142,18 @@ logPath: ./logs/bpmn/
 app: so-bpmn-infra
 service:
   type: ClusterIP
-  internalPort: *containerPort
-  externalPort: 8081
-  portName: so-bpmn-port
+  ports:
+  - port: *containerPort
+    name: http
 updateStrategy:
   type: RollingUpdate
   maxUnavailable: 1
   maxSurge: 1
 
 #################################################################
-# soHelper part
+# soHelpers part
 #################################################################
 soHelpers:
-  nameOverride: so-bpmn-cert-init
-  certInitializer:
-    nameOverride: so-bpmn-cert-init
-    credsPath: /opt/app/osaaf/local
-  cadi:
-    apiEnforcement: org.onap.so.bpmnPerm
   containerPort: *containerPort
 
 # Resource Limit flavor -By Default using small
@@ -147,18 +162,18 @@ flavor: large
 resources:
   small:
     limits:
-      memory: 4Gi
-      cpu: 2000m
+      cpu: "1"
+      memory: "3Gi"
     requests:
-      memory: 1Gi
-      cpu: 500m
+      cpu: "0.5"
+      memory: "3Gi"
   large:
     limits:
-      memory: 8Gi
-      cpu: 4000m
+      cpu: "2"
+      memory: "6Gi"
     requests:
-      memory: 2Gi
-      cpu: 1000m
+      cpu: "1"
+      memory: "6Gi"
   unlimited: {}
 livenessProbe:
   path: /manage/health
@@ -170,6 +185,16 @@ livenessProbe:
   failureThreshold: 3
 ingress:
   enabled: false
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: robot-read
+      - serviceAccount: so-admin-cockpit-read
+      - serviceAccount: so-oof-adapter-read
+      - serviceAccount: so-openstack-adapter-read
+      - serviceAccount: so-read
+      - serviceAccount: so-sdc-controller-read
+      - serviceAccount: so-sdnc-adapter-read
 nodeSelector: {}
 tolerations: []
 affinity: {}

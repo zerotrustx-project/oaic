@@ -51,8 +51,8 @@ generate_overrides() {
     END=${SUBCHART_NAMES[index+1]}
     if [ "$START" = "global:" ]; then
       echo "global:" > $GLOBAL_OVERRIDES
-      cat $COMPUTED_OVERRIDES | sed '/common:/,/consul:/d' \
-        | sed -n '/^'"$START"'/,/'log:'/p' | sed '1d;$d' >> $GLOBAL_OVERRIDES
+      cat $COMPUTED_OVERRIDES | sed -n '/^'"$START"'/,/'"$END"'/p' \
+        | sed '1d;$d' >> $GLOBAL_OVERRIDES
     else
       SUBCHART_DIR="$CACHE_SUBCHART_DIR/$(echo "$START" |cut -d':' -f1)"
       if [ -d "$SUBCHART_DIR" ]; then
@@ -67,24 +67,75 @@ generate_overrides() {
     fi
   done
 }
+
+
 resolve_deploy_flags() {
-  flags=($1)
-  n=${#flags[*]}
-  i=0 ; while [ "$i" -lt "$n" ]; do
-    PARAM=${flags[i]}
-    if [ "$PARAM" = "-f" ] || \
-       [ "$PARAM" = "--values" ] || \
-       [ "$PARAM" = "--set" ] || \
-       [ "$PARAM" = "--set-string" ] || \
-       [ "$PARAM" = "--version" ]; then
-       # skip param and its value
-       i=$((i + 1))
+  skip="false"
+  for param in $1; do
+    if [ "$skip" = "false" ]; then
+      if [ "$param" = "-f" ] || \
+         [ "$param" = "--values" ] || \
+         [ "$param" = "--set" ] || \
+         [ "$param" = "--set-string" ] || \
+         [ "$param" = "--version" ]; then
+        skip="true"
+      else
+        DEPLOY_FLAGS="$DEPLOY_FLAGS $param"
+      fi
     else
-      DEPLOY_FLAGS="$DEPLOY_FLAGS $PARAM"
+      skip="false"
     fi
-    i=$((i+1))
   done
   echo "$DEPLOY_FLAGS"
+}
+
+
+check_for_dep() {
+    try=0
+    retries=60
+    until (kubectl get deployment -n $HELM_NAMESPACE | grep -P "\b$1\b") >/dev/null 2>&1; do
+        try=$(($try + 1))
+        [ $try -gt $retries ] && exit 1
+        echo "$1 not found. Retry $try/$retries"
+        sleep 10
+    done
+    echo "$1 found. Waiting for pod intialisation"
+    sleep 15
+}
+
+deploy_strimzi() {
+  #Deploy the srtimzi-kafka chart in advance. Dependent charts require the entity-operator
+  #for management of the strimzi crds
+  deploy_subchart
+  echo "waiting for ${RELEASE}-strimzi-entity-operator to be deployed"
+  check_for_dep ${RELEASE}-strimzi-entity-operator
+}
+
+deploy_subchart() {
+  if [ -z "$SUBCHART_RELEASE" ] || [ "$SUBCHART_RELEASE" = "$subchart" ]; then
+        LOG_FILE=$LOG_DIR/"${RELEASE}-${subchart}".log
+        :> $LOG_FILE
+
+        helm upgrade -i "${RELEASE}-${subchart}" $CACHE_SUBCHART_DIR/$subchart \
+         $DEPLOY_FLAGS -f $GLOBAL_OVERRIDES -f $SUBCHART_OVERRIDES \
+         > $LOG_FILE 2>&1
+
+        if [ "$VERBOSE" = "true" ]; then
+          cat $LOG_FILE
+        else
+          echo "release \"${RELEASE}-${subchart}\" deployed"
+        fi
+        # Add annotation last-applied-configuration if set-last-applied flag is set
+        if [ "$SET_LAST_APPLIED" = "true" ]; then
+          helm get manifest "${RELEASE}-${subchart}" \
+          | kubectl apply set-last-applied --create-annotation -n $HELM_NAMESPACE -f - \
+          > $LOG_FILE.log 2>&1
+        fi
+      fi
+      if [ "$DELAY" = "true" ]; then
+        echo sleep 3m
+        sleep 180
+      fi
 }
 
 deploy() {
@@ -209,7 +260,7 @@ deploy() {
     # Add annotation last-applied-configuration if set-last-applied flag is set
     if [ "$SET_LAST_APPLIED" = "true" ]; then
       helm get manifest ${RELEASE} \
-      | kubectl apply set-last-applied --create-annotation -n onap -f - \
+      | kubectl apply set-last-applied --create-annotation -n $HELM_NAMESPACE -f - \
       > $LOG_FILE.log 2>&1
     fi
   fi
@@ -219,47 +270,59 @@ deploy() {
   #“helm ls” is an expensive command in that it can take a long time to execute.
   #So cache the results to prevent repeated execution.
   ALL_HELM_RELEASES=$(helm ls -q)
-  for subchart in * ; do
-    SUBCHART_OVERRIDES=$CACHE_SUBCHART_DIR/$subchart/subchart-overrides.yaml
 
-    SUBCHART_ENABLED=0
-    if [ -f $SUBCHART_OVERRIDES ]; then
-      SUBCHART_ENABLED=$(cat $SUBCHART_OVERRIDES | grep -c "^enabled: true")
-    fi
+    for subchart in roles-wrapper repository-wrapper strimzi cassandra mariadb-galera postgres ; do
+      SUBCHART_OVERRIDES=$CACHE_SUBCHART_DIR/$subchart/subchart-overrides.yaml
 
-    if [ $SUBCHART_ENABLED -eq 1 ]; then
-      if [ -z "$SUBCHART_RELEASE" ] || [ "$SUBCHART_RELEASE" = "$subchart" ]; then
-        LOG_FILE=$LOG_DIR/"${RELEASE}-${subchart}".log
-        :> $LOG_FILE
-
-        helm upgrade -i "${RELEASE}-${subchart}" $CACHE_SUBCHART_DIR/$subchart \
-         $DEPLOY_FLAGS -f $GLOBAL_OVERRIDES -f $SUBCHART_OVERRIDES \
-         > $LOG_FILE 2>&1
-
-        if [ "$VERBOSE" = "true" ]; then
-          cat $LOG_FILE
-        else
-          echo "release \"${RELEASE}-${subchart}\" deployed"
-        fi
-        # Add annotation last-applied-configuration if set-last-applied flag is set
-        if [ "$SET_LAST_APPLIED" = "true" ]; then
-          helm get manifest "${RELEASE}-${subchart}" \
-          | kubectl apply set-last-applied --create-annotation -n onap -f - \
-          > $LOG_FILE.log 2>&1
-        fi
+      SUBCHART_ENABLED=0
+      if [ -f $SUBCHART_OVERRIDES ]; then
+        SUBCHART_ENABLED=$(cat $SUBCHART_OVERRIDES | grep -c "^enabled: true")
       fi
-      if [ "$DELAY" = "true" ]; then
-        echo sleep 3m
-        sleep 180
+      if [ "${subchart}" = "strimzi" ] && [ $SUBCHART_ENABLED -eq 1 ]; then
+        deploy_strimzi
       fi
-    else
-      array=($(echo "$ALL_HELM_RELEASES" | grep "${RELEASE}-${subchart}"))
-      n=${#array[*]}
-      for i in $(seq $(($n-1)) -1 0); do
-        helm del "${array[i]}"
-      done
-    fi
-  done
+      # Deploy them at first
+      if [ $SUBCHART_ENABLED -eq 1 ]; then
+        deploy_subchart
+      else
+        reverse_list=
+        for item in $(echo "$ALL_HELM_RELEASES" | grep "${RELEASE}-${subchart}")
+        do
+          reverse_list="$item $reverse_list"
+        done
+        for item in $reverse_list
+        do
+          helm del $item
+        done
+      fi
+    done
+    # Disable delay
+    DELAY="false"
+    for subchart in * ; do
+      SUBCHART_OVERRIDES=$CACHE_SUBCHART_DIR/$subchart/subchart-overrides.yaml
+
+      SUBCHART_ENABLED=0
+      if [ -f $SUBCHART_OVERRIDES ]; then
+        SUBCHART_ENABLED=$(cat $SUBCHART_OVERRIDES | grep -c "^enabled: true")
+      fi
+      if [ "${subchart}" = "strimzi" ] || [ "${subchart}" = "cassandra" ] || [ "${subchart}" = "mariadb-galera" ] || [ "${subchart}" = "postgres" ]; then
+        SUBCHART_ENABLED=0
+      fi
+      # Deploy the others
+      if [ $SUBCHART_ENABLED -eq 1 ]; then
+        deploy_subchart
+      else
+        reverse_list=
+        for item in $(echo "$ALL_HELM_RELEASES" | grep "${RELEASE}-${subchart}")
+        do
+          reverse_list="$item $reverse_list"
+        done
+        for item in $reverse_list
+        do
+          helm del $item
+        done
+      fi
+    done
 
   # report on success/failures of installs/upgrades
   helm ls --all-namespaces | grep -i FAILED | grep $RELEASE

@@ -25,6 +25,9 @@ spring:
         password: ${ACTUATOR_PASSWORD}
         role: ACTUATOR
 server:
+  {{- if include "common.onServiceMesh" . }}
+  forward-headers-strategy: none
+  {{- end }}
   port: {{ index .Values.containerPort }}
   tomcat:
     max-threads: 50
@@ -36,13 +39,13 @@ mso:
   msb-port: 80
   msoKey: ${MSO_KEY}
   camundaURL: http://so-bpmn-infra.{{ include "common.namespace" . }}:8081
-  camundaAuth: {{ include "so.helpers.profileProperty" (dict "condition" .Values.global.security.aaf.enabled "value1" .Values.global.aaf.auth.header "value2" .Values.mso.camundaAuth )}}
+  camundaAuth: {{ .Values.mso.camundaAuth }}
   workflow:
     message:
       endpoint: http://so-bpmn-infra.{{ include "common.namespace" . }}:8081/mso/WorkflowMessage
   oof:
     auth: ${OOF_LOGIN}:${OOF_PASSWORD}
-    endpoint: https://oof-osdf.{{ include "common.namespace" . }}:8698
+    endpoint: http://oof-osdf.{{ include "common.namespace" . }}:8698
 #Actuator
 management:
   endpoints:

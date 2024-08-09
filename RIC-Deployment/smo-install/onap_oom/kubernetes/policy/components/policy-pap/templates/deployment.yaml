@@ -1,6 +1,7 @@
 {{/*
 #  ============LICENSE_START=======================================================
 #   Copyright (C) 2020 AT&T Intellectual Property.
+#   Modifications Copyright (C) 2022 Bell Canada. All rights reserved.
 #  ================================================================================
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -32,8 +33,11 @@ spec:
         - /app/ready.py
         args:
         - --job-name
+{{ if not .Values.global.postgres.localCluster }}
         - {{ include "common.release" . }}-policy-galera-config
-        env:
+{{ else }}
+        - {{ include "common.release" . }}-policy-pg-config
+{{ end }}        env:
         - name: NAMESPACE
           valueFrom:
             fieldRef:
@@ -41,7 +45,14 @@ spec:
               fieldPath: metadata.namespace
         image: {{ include "repositoryGenerator.image.readiness" . }}
         imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
-        name: {{ include "common.name" . }}-readiness
+        name: {{ include "common.name" . }}-db-readiness
+        resources:
+          limits:
+            cpu: "100m"
+            memory: "500Mi"
+          requests:
+            cpu: "3m"
+            memory: "20Mi"
       - command:
         - sh
         args:
@@ -64,6 +75,11 @@ spec:
           {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "distribution-secret" "key" "login") | indent 10 }}
         - name: DISTRIBUTION_PASSWORD
           {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "distribution-secret" "key" "password") | indent 10 }}
+        - name: JAASLOGIN
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "common.name" . }}-ku
+              key: sasl.jaas.config
         volumeMounts:
         - mountPath: /config-input
           name: papconfig
@@ -72,24 +88,15 @@ spec:
         image: {{ include "repositoryGenerator.image.envsubst" . }}
         imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
         name: {{ include "common.name" . }}-update-config
-{{ include "common.certInitializer.initContainer" . | indent 6 }}
       containers:
         - name: {{ include "common.name" . }}
           image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
           imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
-{{- if .Values.global.aafEnabled }}
-          command: ["sh","-c"]
-          args: ["source {{ .Values.certInitializer.credsPath }}/.ci;\
-                  /opt/app/policy/pap/bin/policy-pap.sh /opt/app/policy/pap/etc/mounted/config.json"]
-{{- else }}
-          command: ["/opt/app/policy/pap/bin/policy-pap.sh"]
-          args: ["/opt/app/policy/pap/etc/mounted/config.json"]
-          env:
-          - name: KEYSTORE_PASSWD
-            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "keystore-password" "key" "password") | indent 12 }}
-          - name: TRUSTSTORE_PASSWD
-            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "truststore-password" "key" "password") | indent 12 }}
-{{- end }}
+
+          command: [ "/bin/sh", "-cx" ]
+          args:
+            - cat /opt/app/policy/pap/etc/mounted/papParameters.yaml;
+              /opt/app/policy/pap/bin/policy-pap.sh /opt/app/policy/pap/etc/mounted/papParameters.yaml
           ports: {{ include "common.containerPorts" . | nindent 12  }}
           # disable liveness probe when breakpoints set in debugger
           # so K8s doesn't restart unresponsive container
@@ -101,19 +108,22 @@ spec:
             periodSeconds: {{ .Values.liveness.periodSeconds }}
           {{ end -}}
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              path: {{ .Values.readiness.api }}
               port: {{ .Values.readiness.port }}
+              httpHeaders:
+                - name: Authorization
+                  value: Basic {{ printf "%s:%s" .Values.restServer.user .Values.restServer.password | b64enc }}
+              scheme: "HTTP"
+            successThreshold: {{ .Values.readiness.successThreshold }}
+            failureThreshold: {{ .Values.readiness.failureThreshold }}
             initialDelaySeconds: {{ .Values.readiness.initialDelaySeconds }}
             periodSeconds: {{ .Values.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.readiness.timeout }}
           volumeMounts:
-{{ include "common.certInitializer.volumeMount" . | indent 10 }}
-          - mountPath: /etc/localtime
-            name: localtime
-            readOnly: true
           - mountPath: /opt/app/policy/pap/etc/mounted
             name: papconfig-processed
-          resources:
-{{ include "common.resources" . }}
+          resources: {{ include "common.resources" . | nindent 12 }}
         {{- if .Values.nodeSelector }}
         nodeSelector:
 {{ toYaml .Values.nodeSelector | indent 10 }}
@@ -124,10 +134,6 @@ spec:
         {{- end }}
       serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
       volumes:
-{{ include "common.certInitializer.volumes" . | indent 8 }}
-        - name: localtime
-          hostPath:
-             path: /etc/localtime
         - name: papconfig
           configMap:
             name: {{ include "common.fullname" . }}-configmap
@@ -135,5 +141,4 @@ spec:
         - name: papconfig-processed
           emptyDir:
             medium: Memory
-      imagePullSecrets:
-      - name: "{{ include "common.namespace" . }}-docker-registry-key"
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

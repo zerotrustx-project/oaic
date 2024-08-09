@@ -18,9 +18,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata: {{- include "common.resourceMetadata" . | nindent 2 }}
 spec:
-  selector:
-    matchLabels:
-      app: {{ include "common.name" . }}
   replicas: {{ .Values.replicaCount }}
   selector: {{- include "common.selectors" . | nindent 4 }}
   template:
@@ -53,7 +50,7 @@ spec:
       - command:
         - /app/ready.py
         args:
-        - --container-name
+        - --service-name
         - {{ .Values.config.sdncChartName }}
         env:
         - name: NAMESPACE
@@ -64,6 +61,13 @@ spec:
         image: {{ include "repositoryGenerator.image.readiness" . }}
         imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
         name: {{ include "common.name" . }}-readiness
+        resources:
+          limits:
+            cpu: "100m"
+            memory: "500Mi"
+          requests:
+            cpu: "3m"
+            memory: "20Mi"
       containers:
         - name: {{ include "common.name" . }}
           command: ["/bin/bash"]
@@ -71,8 +75,7 @@ spec:
 
           image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
           imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
-          ports:
-          - containerPort: {{ .Values.service.internalPort }}
+          ports: {{ include "common.containerPorts" . | nindent 12  }}
           # disable liveness probe when breakpoints set in debugger
           # so K8s doesn't restart unresponsive container
           {{ if .Values.liveness.enabled }}
@@ -88,9 +91,6 @@ spec:
             initialDelaySeconds: {{ .Values.readiness.initialDelaySeconds }}
             periodSeconds: {{ .Values.readiness.periodSeconds }}
           volumeMounts:
-          - mountPath: /etc/localtime
-            name: localtime
-            readOnly: true
           - mountPath: {{ .Values.config.configDir }}/RestServer_config
             name: config
             subPath: RestServer_config
@@ -103,9 +103,6 @@ spec:
       {{- end }}
       serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
       volumes:
-        - name: localtime
-          hostPath:
-            path: /etc/localtime
         - name: config-input
           configMap:
             name: {{ include "common.fullname" . }}
@@ -113,5 +110,4 @@ spec:
         - name: config
           emptyDir:
             medium: Memory
-      imagePullSecrets:
-      - name: "{{ include "common.namespace" . }}-docker-registry-key"
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

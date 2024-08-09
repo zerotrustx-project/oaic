@@ -21,6 +21,7 @@ metadata:
   namespace: {{ include "common.namespace" . }}
   labels:
     app: {{ include "common.name" . }}
+    app.kubernetes.io/name: {{ include "common.name" . }}
     chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
     release: {{ include "common.release" . }}
     heritage: {{ .Release.Service }}
@@ -28,18 +29,33 @@ spec:
   type: {{ .Values.service.type }}
   ports:
   {{ if eq .Values.service.type "NodePort" -}}
-  - port: {{ .Values.service.internalPort }}
+  - port: {{ .Values.service.resourcesPort }}
     nodePort: {{ .Values.global.nodePortPrefix | default .Values.nodePortPrefix }}{{ .Values.service.nodePort }}
-    name: {{ .Values.service.portName }}{{ (eq "true" (include "common.needTLS" .)) | ternary "s" "" }}
-  - port: {{ .Values.service.internalPort2 }}
+    name: {{ .Values.service.resourcesPortName }}
+    targetPort: {{ .Values.service.resourcesPortName }}
+  - port: {{ .Values.service.debugPort }}
     nodePort: {{ .Values.global.nodePortPrefix | default .Values.nodePortPrefix }}{{ .Values.service.nodePort2 }}
-    name: {{ .Values.service.portName2 }}
+    name: {{ .Values.service.debugPortName }}
+    targetPort: {{ .Values.service.debugPortName }}
+  - port: {{ .Values.service.metricsPort }}
+    nodePort: {{ .Values.global.nodePortPrefix | default .Values.nodePortPrefix }}{{ .Values.service.nodePort3 }}
+    name: {{ .Values.service.metricsPortName }}
+    targetPort: {{ .Values.service.metricsPortName }}
   {{- else -}}
-  - port: {{ .Values.service.internalPort }}
-    name: {{ .Values.service.portName }}{{ (eq "true" (include "common.needTLS" .)) | ternary "s" "" }}
-  - port: {{ .Values.service.internalPort2 }}
-    name: {{ .Values.service.portName2 }}
+  - port: {{ .Values.service.resourcesPort }}
+    name: {{ .Values.service.resourcesPortName }}
+    targetPort: {{ .Values.service.resourcesPortName }}
+  {{- if .Values.config.debug.enabled }}
+  - port: {{ .Values.service.debugPort }}
+    name: {{ .Values.service.debugPortName }}
+    targetPort: {{ .Values.service.debugPortName }}
+  {{- end }}
+  - port: {{ .Values.service.metricsPort }}
+    name: {{ .Values.service.metricsPortName }}
+    targetPort: {{ .Values.service.metricsPortName }}
   {{- end }}
   selector:
     app: {{ include "common.name" . }}
     release: {{ include "common.release" . }}
+  clusterIP: None
+  sessionAffinity: {{ .Values.service.sessionAffinity }}

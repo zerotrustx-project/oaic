@@ -18,7 +18,7 @@
 #################################################################
 global:
   nodePortPrefix: 302
-  artifactImage: onap/multicloud/framework-artifactbroker:1.7.2
+  artifactImage: onap/multicloud/framework-artifactbroker:1.9.0
   prometheus:
     enabled: false
   persistence: {}
@@ -28,7 +28,7 @@ global:
 # Application configuration defaults.
 #################################################################
 # application image
-image: onap/multicloud/framework:1.7.1
+image: onap/multicloud/framework:1.8.1
 pullPolicy: Always
 
 #Istio sidecar injection policy
@@ -56,14 +56,12 @@ multicloud-windriver:
 
 # application configuration
 config:
-  ssl_enabled: true
-  msbprotocol: https
   msbgateway: msb-iag
-  msbPort: 443
   logstashServiceName: log-ls
   logstashPort: 5044
+  msbPort: 80
   aai:
-    port: 8443
+    aaiPort: 80
     schemaVersion: v13
     username: AAI
     password: AAI
@@ -85,15 +83,41 @@ liveness:
   enabled: true
 
 service:
-  type: ClusterIP
-  name: multicloud
-  portName: multicloud-framework
-  externalPort: 9001
+  type: NodePort
   internalPort: 9001
-  nodePort: 91
+  ports:
+    - name: http
+      port: 9001
+      nodePort: '91'
+  annotations:
+    msb.onap.org/service-info: |
+      {{ if .Values.global.msbEnabled -}}[
+        {
+          "serviceName": "multicloud",
+          "version": "v0",
+          "url": "/api/multicloud/v0",
+          "protocol": "REST",
+          "port": "{{ .Values.service.internalPort }}",
+          "enable_ssl": false,
+          "visualRange": "1"
+        },
+        {
+          "serviceName": "multicloud",
+          "version": "v1",
+          "url": "/api/multicloud/v1",
+          "protocol": "REST",
+          "port": "{{ .Values.service.internalPort }}",
+          "enable_ssl": false,
+          "visualRange": "1"
+        }
+      ]{{ end }}
 
 ingress:
   enabled: false
+  service:
+    - baseaddr: 'multicloud-api'
+      name: 'multicloud'
+      port: 9001
 
 # Resource Limit flavor -By Default using small
 flavor: small
@@ -101,18 +125,18 @@ flavor: small
 resources:
   small:
     limits:
-      cpu: 1
-      memory: 4Gi
+      cpu: "1"
+      memory: "4Gi"
     requests:
-      cpu: 10m
-      memory: 1Gi
+      cpu: "10m"
+      memory: "1Gi"
   large:
     limits:
-      cpu: 2
-      memory: 8Gi
+      cpu: "2"
+      memory: "8Gi"
     requests:
-      cpu: 20m
-      memory: 2Gi
+      cpu: "20m"
+      memory: "2Gi"
   unlimited: {}
 
 #Pods Service Account

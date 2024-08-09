@@ -19,7 +19,7 @@
 global:
   commonConfigPrefix: onap-oof-has
   image:
-    optf_has: onap/optf-has:2.2.1
+    optf_has: onap/optf-has:2.3.1
   persistence:
     enabled: true
 
@@ -27,11 +27,6 @@ global:
 # Secrets metaconfig
 #################################################################
 secrets:
-  - uid: oof-onap-certs
-    name: &oof-certs  '{{ include "common.release" . }}-oof-onap-certs'
-    externalSecret: '{{ tpl (default "" .Values.certSecret) . }}'
-    type: generic
-    filePaths: '{{ .Values.secretsFilePaths }}'
   - uid: oof-has-etcd-root-password
     name: &root-password '{{ include "common.release" . }}-has-etcd-root-password'
     type: password
@@ -50,26 +45,20 @@ nodePortPrefix: 302
 dataRootDir: /dockerdata-nfs
 config:
   dbBackend: etcd
-  aaf:
-    serviceName: aaf-service
-    port: 8100
   aai:
     serviceName: aai
-    port: 8443
+    port: 80
   msb:
     serviceName: msb-iag
     port: 80
-  music:
-    serviceName: music
-    port: 8443
-  sms:
-    serviceName: aaf-sms
-    port: 10443
   sdc:
     serviceName: sdc-be
-    port: 8443
+    port: 8080
   cps:
-    service: cps-tbdmt
+    serviceName: cps-tbdmt
+    port: 8080
+  dcae:
+    serviceName: dcae-slice-analysis-ms
     port: 8080
   etcd:
     serviceName: &etcd-service oof-has-etcd
@@ -84,24 +73,23 @@ flavor: small
 resources:
   small:
     limits:
-      memory: 2Gi
-      cpu: 1000m
+      cpu: "1"
+      memory: "2Gi"
     requests:
-      memory: 1Gi
-      cpu: 500m
+      cpu: "0.5"
+      memory: "1Gi"
   large:
     limits:
-      memory: 4Gi
-      cpu: 2000m
+      cpu: "2"
+      memory: "4Gi"
     requests:
-      memory: 2Gi
-      cpu: 1000m
+      cpu: "1"
+      memory: "2Gi"
   unlimited: {}
 
 #component overrides
 oof-has-api: &has-config
   enabled: true
-  certSecret: *oof-certs
   config:
     etcd:
       userCredentialsExternalSecret: *user-creds
@@ -110,8 +98,6 @@ oof-has-controller: *has-config
 oof-has-data: *has-config
 oof-has-reservation: *has-config
 oof-has-solver: *has-config
-music:
-  enabled: false
 
 #etcd subchart configurations
 etcd:
@@ -127,18 +113,18 @@ etcd:
   resources: &etcd-resources
     small:
       limits:
-        cpu: 100m
-        memory: 300Mi
+        cpu: "100m"
+        memory: "300Mi"
       requests:
-        cpu: 10m
-        memory: 75Mi
+        cpu: "10m"
+        memory: "70Mi"
     large:
       limits:
-        cpu: 200m
-        memory: 1Gi
+        cpu: "200m"
+        memory: "1Gi"
       requests:
-        cpu: 50m
-        memory: 300Mi
+        cpu: "50m"
+        memory: "300Mi"
     unlimited: {}
 
 etcd-init:
@@ -155,3 +141,8 @@ etcd-init:
     keyPrefix: conductor
   flavor: *etcd-flavor
   resources: *etcd-resources
+  serviceAccount:
+    nameOverride: *job-name
+
+# Python doesn't support well dollar sign in password
+passwordStrengthOverride: basic

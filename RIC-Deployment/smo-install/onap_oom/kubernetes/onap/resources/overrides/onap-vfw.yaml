@@ -21,17 +21,7 @@ cassandra:
 mariadb-galera:
   enabled: true
 
-aaf:
-  enabled: true
 aai:
-  enabled: true
-appc:
-  enabled: true
-clamp:
-  enabled: true
-consul:
-  enabled: true
-dcaegen2:
   enabled: true
 dcaegen2-services:
   enabled: true
@@ -39,15 +29,19 @@ holmes:
   enabled: true
 dmaap:
   enabled: true
-log:
-  enabled: true
+  message-router:
+    enabled: true
+  dmaap-dr-prov:
+    enabled: false
+  dmaap-dr-node:
+    enabled: false
 oof:
   enabled: true
 msb:
   enabled: true
 policy:
   enabled: true
-portal:
+portal-ng:
   enabled: true
 robot:
   enabled: true
@@ -57,5 +51,7 @@ sdnc:
   enabled: true
 so:
   enabled: true
-vid:
+strimzi:
   enabled: true
+  strimzi-kafka-bridge:
+    enabled: false

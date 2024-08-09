@@ -17,10 +17,7 @@
 
 apiVersion: batch/v1
 kind: Job
-metadata:
-  name: {{ include "common.fullname" . }}-config-backend
-  namespace: {{ include "common.namespace" . }}
-  labels: {{- include "common.labels" . | nindent 4 }}
+metadata: {{- include "common.resourceMetadata" . | nindent 2 }}
 spec:
   backoffLimit: 20
   template:
@@ -39,7 +36,7 @@ spec:
         command:
         - /app/ready.py
         args:
-        - --container-name
+        - --service-name
         - sdc-be
         - "-t"
         - "35"
@@ -51,11 +48,11 @@ spec:
               fieldPath: metadata.namespace
         resources:
           limits:
-            cpu: 100m
-            memory: 100Mi
+            cpu: "100m"
+            memory: "500Mi"
           requests:
-            cpu: 3m
-            memory: 20Mi
+            cpu: "3m"
+            memory: "20Mi"
       containers:
       - name: {{ include "common.name" . }}-job
         image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.backendInitImage }}
@@ -74,12 +71,13 @@ spec:
               fieldPath: status.podIP
         resources:
           limits:
-            cpu: 800m
-            memory: 1024Mi
+            cpu: "800m"
+            memory: "1Gi"
           requests:
-            cpu: 200m
-            memory: 200Mi
+            cpu: "200m"
+            memory: "200Mi"
       {{ include "common.waitForJobContainer" . | indent 6 | trim }}
+      serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
       volumes:
         - name: {{ include "common.fullname" . }}-environments
           configMap:
@@ -87,6 +85,4 @@ spec:
             defaultMode: 0755
         - name: sdc-logs
           emptyDir: {}
-      imagePullSecrets:
-      - name: "{{ include "common.namespace" . }}-docker-registry-key"
-      restartPolicy: Never
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

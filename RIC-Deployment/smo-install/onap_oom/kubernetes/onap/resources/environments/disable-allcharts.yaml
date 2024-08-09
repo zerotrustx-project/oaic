@@ -25,35 +25,19 @@
 # Enable/disable and configure helm charts (ie. applications)
 # to customize the ONAP deployment.
 #################################################################
-aaf:
-  enabled: false
 aai:
-  enabled: false
-appc:
   enabled: false
 cassandra:
   enabled: false
-clamp:
-  enabled: false
 cli:
   enabled: false
-consul:
-  enabled: false
-contrib:
-  enabled: false
 cps:
-  enabled: false
-dcaegen2:
   enabled: false
 dcaegen2-services:
   enabled: false
 holmes:
   enabled: false
 dmaap:
-  enabled: false
-log:
-  enabled: false
-sniro-emulator:
   enabled: false
 mariadb-galera:
   enabled: false
@@ -67,9 +51,7 @@ oof:
   enabled: false
 policy:
   enabled: false
-pomba:
-  enabled: false
-portal:
+portal-ng:
   enabled: false
 robot:
   enabled: false
@@ -79,11 +61,11 @@ sdnc:
   enabled: false
 so:
   enabled: false
+strimzi:
+  enabled: false
 uui:
   enabled: false
 vfc:
-  enabled: false
-vid:
   enabled: false
 vnfsdk:
   enabled: false

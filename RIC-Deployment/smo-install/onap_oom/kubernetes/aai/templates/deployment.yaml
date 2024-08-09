@@ -1,6 +1,7 @@
 {{/*
 # Copyright (c) 2018 Amdocs, Bell Canada, AT&T
 # Modifications Copyright (c) 2020 Nokia, Orange
+# Modifications Copyright © 2023 Nordix Foundation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,6 +23,12 @@ metadata:
   namespace: {{ include "common.namespace" . }}
   labels:
     app: {{ include "common.name" . }}
+    app.kubernetes.io/name: {{ include "common.name" . }}
+    {{- if .Chart.AppVersion }}
+    version: "{{ .Chart.AppVersion | replace "+" "_" }}"
+    {{- else }}
+    version: "{{ .Chart.Version | replace "+" "_" }}"
+    {{- end }}
     chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
     release: {{ include "common.release" . }}
     heritage: {{ .Release.Service }}
@@ -30,24 +37,38 @@ spec:
     matchLabels:
       app: {{ include "common.name" . }}
   replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: {{ .Values.updateStrategy.type }}
+    {{- if (eq "RollingUpdate" .Values.updateStrategy.type) }}
+    rollingUpdate:
+      maxUnavailable: {{ .Values.updateStrategy.maxUnavailable }}
+      maxSurge: {{ .Values.updateStrategy.maxSurge }}
+    {{- end }}
   template:
     metadata:
       labels:
         app: {{ include "common.name" . }}
         release: {{ include "common.release" . }}
+        app.kubernetes.io/name: {{ include "common.name" . }}
+        {{- if .Chart.AppVersion }}
+        version: "{{ .Chart.AppVersion | replace "+" "_" }}"
+        {{- else }}
+        version: "{{ .Chart.Version | replace "+" "_" }}"
+        {{- end }}
       name: {{ include "common.release" . }}
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
     spec:
-      initContainers: {{ include "common.certInitializer.initContainer" . | nindent 6 }}
+      terminationGracePeriodSeconds: {{ .Values.service.terminationGracePeriodSeconds }}
+      initContainers:
       - command:
         - /app/ready.py
         args:
-        - --container-name
+        - --service-name
         - aai-resources
-        - --container-name
+        - --service-name
         - aai-traversal
-        - --container-name
+        - --service-name
         - aai-graphadmin
         env:
         - name: NAMESPACE
@@ -58,16 +79,18 @@ spec:
         image: {{ include "repositoryGenerator.image.readiness" . }}
         imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
         name: {{ include "common.name" . }}-readiness
+        resources:
+          requests:
+            memory: {{ .Values.haproxy.initContainers.resources.memory }}
+            cpu: {{ .Values.haproxy.initContainers.resources.cpu }}
+          limits:
+            memory: {{ .Values.haproxy.initContainers.resources.memory }}
+            cpu: {{ .Values.haproxy.initContainers.resources.cpu }}
       containers:
       - name: {{ include "common.name" . }}
         image: "{{ include "repositoryGenerator.dockerHubRepository" . }}/{{ .Values.image }}"
         imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
         volumeMounts:
-        - mountPath: /etc/localtime
-          name: localtime
-          readOnly: true
-        - mountPath: /dev/log
-          name: aai-service-log
         - mountPath: /usr/local/etc/haproxy/haproxy.cfg
         {{ if .Values.global.installSidecarSecurity }}
           subPath: haproxy-pluggable-security.cfg
@@ -75,25 +98,25 @@ spec:
           subPath: haproxy.cfg
         {{ end }}
           name: haproxy-cfg
-        {{- include "common.certInitializer.volumeMount" . | nindent 8 }}
         ports:
         - containerPort: {{ .Values.service.internalPort }}
-        - containerPort: {{ .Values.service.internalPlainPort }}
+          name: {{ .Values.service.portName }}
+        - containerPort: {{ .Values.metricsService.internalPort }}
+          name: {{ .Values.metricsService.portName }}
         # disable liveness probe when breakpoints set in debugger
         # so K8s doesn't restart unresponsive container
         {{- if eq .Values.liveness.enabled true }}
         livenessProbe:
           tcpSocket:
-            port: {{ (eq "true" (include "common.needTLS" .)) | ternary .Values.service.internalPort .Values.service.internalPlainPort }}
+            port: {{ .Values.service.internalPort }}
           initialDelaySeconds: {{ .Values.liveness.initialDelaySeconds }}
           periodSeconds: {{ .Values.liveness.periodSeconds }}
         {{ end -}}
         readinessProbe:
           httpGet:
             path: /aai/util/echo
-            port: {{ (eq "true" (include "common.needTLS" .)) | ternary .Values.service.internalPort .Values.service.internalPlainPort }}
-            #scheme: HTTPS
-            scheme: {{ (eq "true" (include "common.needTLS" .)) | ternary "HTTPS" "HTTP" }}
+            port: {{ .Values.service.internalPort }}
+            scheme: HTTP
             httpHeaders:
             - name: X-FromAppId
               value: OOM_ReadinessCheck
@@ -107,8 +130,7 @@ spec:
               value: application/json
           initialDelaySeconds: {{ .Values.readiness.initialDelaySeconds }}
           periodSeconds: {{ .Values.readiness.periodSeconds }}
-        resources:
-{{ include "common.resources" . }}
+        resources: {{ include "common.resources" . | nindent 10 }}
       {{- if .Values.nodeSelector }}
       nodeSelector:
 {{ toYaml .Values.nodeSelector | indent 8 }}
@@ -119,15 +141,7 @@ spec:
       {{- end }}
       serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
       volumes:
-        - name: localtime
-          hostPath:
-            path: /etc/localtime
-        - name: aai-service-log
-          hostPath:
-            path: "/dev/log"
         - name: haproxy-cfg
           configMap:
             name: aai-deployment-configmap
-        {{ include "common.certInitializer.volumes" . | nindent 8 }}
-      imagePullSecrets:
-      - name: "{{ include "common.namespace" . }}-docker-registry-key"
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

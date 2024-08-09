@@ -19,7 +19,7 @@
 global:
   pullPolicy: Always
   persistence: {}
-image: onap/usecase-ui-nlp:1.0.2
+image: onap/usecase-ui-nlp:1.0.5
 
 uui-nlp:
   enabled: true
@@ -81,16 +81,16 @@ securityContext:
 resources:
   small:
     limits:
-      cpu: 1
-      memory: 1Gi
+      cpu: "1"
+      memory: "1Gi"
     requests:
-      cpu: 0.5
-      memory: 512Mi
+      cpu: "0.5"
+      memory: "500Mi"
   large:
     limits:
-      cpu: 2
-      memory: 2Gi
+      cpu: "2"
+      memory: "2Gi"
     requests:
-      cpu: 1
-      memory: 1Gi
+      cpu: "1"
+      memory: "1Gi"
   unlimited: {}

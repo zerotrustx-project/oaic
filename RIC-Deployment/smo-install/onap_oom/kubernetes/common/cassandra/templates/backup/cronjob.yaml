@@ -14,6 +14,8 @@
 # limitations under the License.
 */}}
 {{- if .Values.backup.enabled }}
+{{- if .Values.global.cassandra.useOperator }}
+{{ else }}
 apiVersion: batch/v1beta1
 kind: CronJob
 metadata:
@@ -37,7 +39,7 @@ spec:
             - command:
               - /app/ready.py
               args:
-              - --container-name
+              - --app-name
               - {{ include "common.name" . }}
               env:
               - name: NAMESPACE
@@ -48,9 +50,23 @@ spec:
               image: {{ include "repositoryGenerator.image.readiness" . }}
               imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
               name: {{ include "common.name" . }}-readiness
+              resources:
+                limits:
+                  cpu: "100m"
+                  memory: "500Mi"
+                requests:
+                  cpu: "3m"
+                  memory: "20Mi"
             - name: "cassandra-backup-init"
               image: {{ include "repositoryGenerator.image.readiness" . }}
               imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+              resources:
+                limits:
+                  cpu: "100m"
+                  memory: "500Mi"
+                requests:
+                  cpu: "3m"
+                  memory: "20Mi"
               command:
               - /bin/bash
               - -c
@@ -132,9 +148,6 @@ spec:
                     apiVersion: v1
                     fieldPath: metadata.namespace
               volumeMounts:
-              - mountPath: /etc/localtime
-                name: localtime
-                readOnly: true
               {{- range $i := until (int .Values.replicaCount)}}
               - mountPath: /onap-data/cassandra-{{ $i }}
                 name: data-dir-{{ $i }}
@@ -223,13 +236,7 @@ spec:
               volumeMounts:
               - name: backup-dir
                 mountPath: /backup
-              - name: localtime
-                mountPath: /etc/localtime
-                readOnly: true
           volumes:
-          - name: localtime
-            hostPath:
-              path: /etc/localtime
           - name: scripts
             configMap:
               name: {{ include "common.fullname" . }}-configmap
@@ -242,4 +249,5 @@ spec:
           - name: backup-dir
             persistentVolumeClaim:
               claimName: {{ include "common.fullname" . }}-backup-data
+{{- end -}}
 {{- end -}}

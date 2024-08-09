@@ -22,16 +22,10 @@ global:
   #This configuration specifies Service and port for SDNC OAM interface
   sdncOamService: sdnc-oam
   sdncOamPort: 8282
-  security:
-    aaf:
-      enabled: false
-  aaf:
-    auth:
-      header: Basic c29Ac28ub25hcC5vcmc6ZGVtbzEyMzQ1Ngo=
-      encrypted: 3EDC974C5CD7FE54C47C7490AF4D3B474CDD7D0FFA35A7ACDE3E209631E45F428976EAC0858874F17390A13149E63C90281DD8D20456
-      #encryptedSecret: some secret
   mariadbGalera:
-    serviceName: mariadb-galera
+    # flag to enable the DB creation via mariadb-operator
+    useOperator: true
+    service: mariadb-galera
     servicePort: '3306'
 
 #################################################################
@@ -55,11 +49,6 @@ secrets:
     type: password
     externalSecret: '{{ tpl (default "" .Values.mso.msoKeySecret) . }}'
     password: '{{ .Values.mso.msoKey }}'
-  - uid: sdnc-adapter-aaf-auth
-    name: '{{ include "common.release" . }}-so-sdnc-aaf-auth'
-    type: password
-    externalSecret: '{{ tpl (default "" .Values.global.aaf.auth.encryptedSecret) . }}'
-    password: '{{ .Values.global.aaf.auth.encrypted }}'
   - uid: sdnc-adapter-mso-auth
     name: '{{ include "common.release" . }}-so-sdnc-mso-auth'
     type: password
@@ -72,7 +61,7 @@ secrets:
 #################################################################
 # Application configuration defaults.
 #################################################################
-image: onap/so/sdnc-adapter:1.9.2
+image: onap/so/sdnc-adapter:1.12.2
 pullPolicy: Always
 
 org:
@@ -93,6 +82,15 @@ mso:
     requestDb:
       auth: Basic YnBlbDpwYXNzd29yZDEk
 
+# Local mariadb galera instance default name
+mariadb-galera:
+  nameOverride: so-mariadb-galera
+  service:
+    internalPort: 3306
+  mariadbOperator:
+    galera:
+      enabled: false
+
 db:
   userName: so_user
   userPassword: so_User123
@@ -107,26 +105,19 @@ containerPort: &containerPort 8086
 logPath: ./logs/sdnc/
 app: sdnc-adapter
 service:
-    type: ClusterIP
-    internalPort: *containerPort
-    externalPort: *containerPort
-    portName: so-sdnc-port
+  type: ClusterIP
+  ports:
+    - name: http
+      port: *containerPort
 updateStrategy:
-    type: RollingUpdate
-    maxUnavailable: 1
-    maxSurge: 1
-
+  type: RollingUpdate
+  maxUnavailable: 1
+  maxSurge: 1
 
 #################################################################
 # soHelpers part
 #################################################################
 soHelpers:
-  nameOverride: so-sdnc-cert-init
-  certInitializer:
-    nameOverride: so-sdnc-cert-init
-    credsPath: /opt/app/osaaf/local
-  cadi:
-    apiEnforcement: org.onap.so.sdncAdapterPerm
   containerPort: *containerPort
 
 # Resource Limit flavor -By Default using small
@@ -135,30 +126,36 @@ flavor: small
 resources:
   small:
     limits:
-      memory: 4Gi
-      cpu: 2000m
+      cpu: "1"
+      memory: "1.5Gi"
     requests:
-      memory: 1Gi
-      cpu: 500m
+      cpu: "0.5"
+      memory: "1.5Gi"
   large:
     limits:
-      memory: 8Gi
-      cpu: 4000m
+      cpu: "2"
+      memory: "3Gi"
     requests:
-      memory: 2Gi
-      cpu: 1000m
+      cpu: "1"
+      memory: "3Gi"
   unlimited: {}
 livenessProbe:
-    path: /manage/health
-    port: 8086
-    scheme: HTTP
-    initialDelaySeconds: 600
-    periodSeconds: 60
-    timeoutSeconds: 10
-    successThreshold: 1
-    failureThreshold: 3
+  path: /manage/health
+  port: 8086
+  scheme: HTTP
+  initialDelaySeconds: 600
+  periodSeconds: 60
+  timeoutSeconds: 10
+  successThreshold: 1
+  failureThreshold: 3
 ingress:
   enabled: false
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: robot-read
+      - serviceAccount: so-bpmn-infra-read
+      - serviceAccount: so-read
 nodeSelector: {}
 tolerations: []
 affinity: {}

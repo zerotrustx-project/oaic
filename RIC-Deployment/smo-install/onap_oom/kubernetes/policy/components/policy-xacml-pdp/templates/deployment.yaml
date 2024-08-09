@@ -20,24 +20,12 @@
 
 apiVersion: apps/v1
 kind: Deployment
-metadata:
-  name: {{ include "common.fullname" . }}
-  namespace: {{ include "common.namespace" . }}
-  labels:
-    app: {{ include "common.name" . }}
-    chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
-    release: {{ include "common.release" . }}
-    heritage: {{ .Release.Service }}
+metadata: {{- include "common.resourceMetadata" . | nindent 2 }}
 spec:
-  selector:
-    matchLabels:
-      app: {{ include "common.name" . }}
+  selector: {{- include "common.selectors" . | nindent 4 }}
   replicas: {{ .Values.replicaCount }}
   template:
-    metadata:
-      labels:
-        app: {{ include "common.name" . }}
-        release: {{ include "common.release" . }}
+    metadata: {{- include "common.templateMetadata" . | nindent 6 }}
     spec:
       initContainers:
       - command:
@@ -54,11 +42,18 @@ spec:
         image: {{ include "repositoryGenerator.image.readiness" . }}
         imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
         name: {{ include "common.name" . }}-readiness
+        resources:
+          limits:
+            cpu: "100m"
+            memory: "500Mi"
+          requests:
+            cpu: "3m"
+            memory: "20Mi"
       - command:
         - sh
         args:
         - -c
-        - "cd /config-input && for PFILE in `ls -1`; do envsubst <${PFILE} >/config/${PFILE}; done"
+        - JAASLOGIN=`echo $JAASLOGIN | tr -d '"'`; cd /config-input && for PFILE in `ls -1`; do envsubst <${PFILE} >/config/${PFILE}; done
         env:
         - name: RESTSERVER_USER
           {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "restserver-creds" "key" "login") | indent 10 }}
@@ -72,6 +67,19 @@ spec:
           {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "db-secret" "key" "login") | indent 10 }}
         - name: SQL_PASSWORD
           {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "db-secret" "key" "password") | indent 10 }}
+        - name: JAASLOGIN
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "common.name" . }}-ku
+              key: sasl.jaas.config
+        - name: KAFKA_URL
+          value: {{ include "common.release" . }}-{{ .Values.global.kafkaBootstrap }}
+        - name: SASL
+          value: {{ .Values.kafkaUser.authenticationType | upper }}
+        - name: GROUP_ID
+          value: {{ .Values.config.kafka.consumer.groupId }}
+        - name: PAP_TOPIC
+          value: {{ .Values.config.app.listener.policyPdpPapTopic }}
         volumeMounts:
         - mountPath: /config-input
           name: pdpxconfig
@@ -80,26 +88,13 @@ spec:
         image: {{ include "repositoryGenerator.image.envsubst" . }}
         imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
         name: {{ include "common.name" . }}-update-config
-{{ include "common.certInitializer.initContainer" . | indent 6 }}
       containers:
         - name: {{ include "common.name" . }}
           image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
           imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
-{{- if .Values.global.aafEnabled }}
-          command: ["sh","-c"]
-          args: ["source {{ .Values.certInitializer.credsPath }}/.ci;\
-                  /opt/app/policy/pdpx/bin/policy-pdpx.sh /opt/app/policy/pdpx/etc/mounted/config.json"]
-{{- else }}
           command: ["/opt/app/policy/pdpx/bin/policy-pdpx.sh"]
           args: ["/opt/app/policy/pdpx/etc/mounted/config.json"]
-          env:
-          - name: KEYSTORE_PASSWD
-            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "keystore-password" "key" "password") | indent 12 }}
-          - name: TRUSTSTORE_PASSWD
-            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "truststore-password" "key" "password") | indent 12 }}
-{{- end }}
-          ports:
-          - containerPort: {{ .Values.service.internalPort }}
+          ports: {{ include "common.containerPorts" . | nindent 12  }}
           # disable liveness probe when breakpoints set in debugger
           # so K8s doesn't restart unresponsive container
           {{- if eq .Values.liveness.enabled true }}
@@ -115,14 +110,9 @@ spec:
             initialDelaySeconds: {{ .Values.readiness.initialDelaySeconds }}
             periodSeconds: {{ .Values.readiness.periodSeconds }}
           volumeMounts:
-{{ include "common.certInitializer.volumeMount" . | indent 10 }}
-          - mountPath: /etc/localtime
-            name: localtime
-            readOnly: true
           - mountPath: /opt/app/policy/pdpx/etc/mounted
             name: pdpxconfig-processed
-          resources:
-{{ include "common.resources" . }}
+          resources: {{ include "common.resources" . | nindent 12 }}
         {{- if .Values.nodeSelector }}
         nodeSelector:
 {{ toYaml .Values.nodeSelector | indent 10 }}
@@ -133,10 +123,6 @@ spec:
         {{- end }}
       serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
       volumes:
-{{ include "common.certInitializer.volumes" . | indent 8 }}
-        - name: localtime
-          hostPath:
-             path: /etc/localtime
         - name: pdpxconfig
           configMap:
             name: {{ include "common.fullname" . }}-configmap
@@ -144,5 +130,4 @@ spec:
         - name: pdpxconfig-processed
           emptyDir:
             medium: Memory
-      imagePullSecrets:
-      - name: "{{ include "common.namespace" . }}-docker-registry-key"
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

@@ -17,27 +17,22 @@
 #################################################################
 global:
   nodePortPrefixExt: 304
-  artifactImage: onap/multicloud/framework-artifactbroker:1.7.2
+  artifactImage: onap/multicloud/framework-artifactbroker:1.9.0
 
 #################################################################
 # Application configuration defaults.
 #################################################################
 # application image
 repository: nexus3.onap.org:10001
-image: onap/multicloud/openstack-starlingx:1.5.6
+image: onap/multicloud/openstack-starlingx:1.5.7
 pullPolicy: Always
-
-#Istio sidecar injection policy
-istioSidecar: false
 
 # application configuration
 config:
-  ssl_enabled: true
-  msbprotocol: https
   msbgateway: msb-iag
-  msbPort: 443
+  msbPort: 80
   aai:
-    port: 8443
+    aaiPort: 80
     schemaVersion: v13
     username: AAI
     password: AAI
@@ -59,15 +54,42 @@ liveness:
   enabled: true
 
 service:
-  type: ClusterIP
-  name: multicloud-starlingx
-  portName: multicloud-starlingx
-  externalPort: 9009
+  type: NodePort
   internalPort: 9009
-  nodePort: 85
+  ports:
+    - name: http
+      port: 9009
+      nodePort: '85'
+      useNodePortExt: true
+  annotations:
+    msb.onap.org/service-info: |
+      {{ if .Values.global.msbEnabled -}}[
+        {
+          "serviceName": "multicloud-starlingx",
+          "version": "v0",
+          "url": "/api/multicloud-starlingx/v0",
+          "protocol": "REST",
+          "port": "{{ .Values.service.internalPort }}",
+          "enable_ssl": false,
+          "visualRange": "1"
+        },
+        {
+          "serviceName": "multicloud-starlingx",
+          "version": "v1",
+          "url": "/api/multicloud-starlingx/v1",
+          "protocol": "REST",
+          "port": "{{ .Values.service.internalPort }}",
+          "enable_ssl": false,
+          "visualRange": "1"
+        }
+      ]{{ end }}
 
 ingress:
   enabled: false
+  service:
+    - baseaddr: 'multicloud-starlingx-api'
+      name: 'multicloud-starlingx'
+      port: 9009
 
 # Resource Limit flavor -By Default using small
 flavor: small
@@ -75,19 +97,22 @@ flavor: small
 resources:
   small:
     limits:
-      cpu: 1
-      memory: 4Gi
+      cpu: "1"
+      memory: "4Gi"
     requests:
-      cpu: 10m
-      memory: 1Gi
+      cpu: "10m"
+      memory: "1Gi"
   large:
     limits:
-      cpu: 2
-      memory: 8Gi
+      cpu: "2"
+      memory: "8Gi"
     requests:
-      cpu: 20m
-      memory: 2Gi
+      cpu: "20m"
+      memory: "2Gi"
   unlimited: {}
+
+# memcached image resource
+memcached: memcached:alpine3.15
 
 #Pods Service Account
 serviceAccount:

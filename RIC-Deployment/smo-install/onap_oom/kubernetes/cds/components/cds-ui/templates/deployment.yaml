@@ -17,35 +17,18 @@
 
 apiVersion: apps/v1
 kind: Deployment
-metadata:
-  name: {{ include "common.fullname" . }}
-  namespace: {{ include "common.namespace" . }}
-  labels:
-    app: {{ include "common.name" . }}
-    chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
-    release: {{ include "common.release" . }}
-    heritage: {{ .Release.Service }}
+metadata: {{- include "common.resourceMetadata" . | nindent 2 }}
 spec:
-  selector:
-    matchLabels:
-      app: {{ include "common.name" . }}
   replicas: {{ .Values.replicaCount }}
+  selector: {{- include "common.selectors" . | nindent 4 }}
   template:
-    metadata:
-      labels:
-        app: {{ include "common.name" . }}
-        release: {{ include "common.release" . }}
-        name: {{ include "common.fullname" . }}
+    metadata: {{- include "common.templateMetadata" . | nindent 6 }}
     spec:
-      {{- if .Values.global.aafEnabled }}
-      initContainers: {{ include "common.certInitializer.initContainer" . | nindent 6 }}
-      {{- end }}
       containers:
         - name: {{ include "common.name" . }}
           image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
           imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
-          ports:
-            - containerPort: {{ .Values.service.internalPort }}
+          ports: {{- include "common.containerPorts" . | nindent 12 }}
           # disable liveness probe when breakpoints set in debugger
           # so K8s doesn't restart unresponsive container
           {{ if .Values.liveness.enabled }}
@@ -58,6 +41,8 @@ spec:
           env:
             - name: HOST
               value: 0.0.0.0
+            - name: PROTOCOL
+              value: "{{ .Values.config.env.protocol }}"
             - name: APP_ACTION_DEPLOY_BLUEPRINT_GRPC_ENABLED
               value: "{{ .Values.config.app.action.deployBlueprint.grpcEnabled }}"
             - name: API_BLUEPRINT_CONTROLLER_HTTP_BASE_URL
@@ -74,23 +59,12 @@ spec:
               value: "{{ .Values.config.api.processor.grpc.port }}"
             - name: API_BLUEPRINT_PROCESSOR_GRPC_AUTH_TOKEN
               value: {{ .Values.config.api.processor.grpc.authToken }}
-            {{- if .Values.global.aafEnabled }}
-            - name: KEYSTORE
-              value: "{{ .Values.certInitializer.credsPath }}/{{ .Values.certInitializer.fqi_namespace }}.p12"
-            - name: PASSPHRASE
-              value: "{{ .Values.certInitializer.credsPath }}/mycreds.prop"
-            {{- end }}
           readinessProbe:
             tcpSocket:
               port: {{ .Values.service.internalPort }}
             initialDelaySeconds: {{ .Values.readiness.initialDelaySeconds }}
             periodSeconds: {{ .Values.readiness.periodSeconds }}
-          volumeMounts: {{ include "common.certInitializer.volumeMount" . | nindent 12 }}
-            - mountPath: /etc/localtime
-              name: localtime
-              readOnly: true
-          resources:
-{{ include "common.resources" . | indent 12 }}
+          resources: {{ include "common.resources" . | nindent 12 }}
         {{- if .Values.nodeSelector }}
         nodeSelector:
 {{ toYaml .Values.nodeSelector | indent 10 }}
@@ -100,9 +74,4 @@ spec:
 {{ toYaml .Values.affinity | indent 10 }}
         {{- end }}
       serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
-      volumes: {{ include "common.certInitializer.volumes" . | nindent 8 }}
-        - name: localtime
-          hostPath:
-            path: /etc/localtime
-      imagePullSecrets:
-      - name: "{{ include "common.namespace" . }}-docker-registry-key"
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

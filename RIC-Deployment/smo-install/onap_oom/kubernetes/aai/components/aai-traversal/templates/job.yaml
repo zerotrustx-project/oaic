@@ -2,6 +2,7 @@
 # Copyright (c) 2017-2018 AT&T
 # Modifications Copyright (c) 2018 Amdocs, Bell Canada
 # Modifications Copyright (c) 2020 Nokia, Orange
+# Modifications Copyright © 2023 Nordix Foundation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -43,53 +44,69 @@ spec:
       name: {{ include "common.name" . }}
     spec:
       initContainers:
-      - command:
+      - name: {{ include "common.name" . }}-readiness
+        image: {{ include "repositoryGenerator.image.readiness" . }}
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        command:
         - /app/ready.py
         args:
-        - --container-name
+        - --service-name
         - aai
-        {{ if eq .Values.global.aafEnabled true }}
-        - --container-name
-        - aaf-locate
-        {{ end }}
         env:
         - name: NAMESPACE
           valueFrom:
             fieldRef:
               apiVersion: v1
               fieldPath: metadata.namespace
+        resources:
+          limits:
+            cpu: "100m"
+            memory: "500Mi"
+          requests:
+            cpu: "3m"
+            memory: "20Mi"
+      - name: {{ include "common.name" . }}-wait-for-aai-haproxy
         image: {{ include "repositoryGenerator.image.readiness" . }}
         imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
-        name: {{ include "common.name" . }}-readiness
+        command:
+        - sh
+        - "-c"
+        - |
+           until nc -w10 -z -v aai.{{.Release.Namespace}} 80; do
+            echo "Retrying to reach aai on port 80";
+            sleep 1;
+           done;
+        resources:
+          limits:
+            cpu: "100m"
+            memory: "500Mi"
+          requests:
+            cpu: "3m"
+            memory: "20Mi"
       containers:
       - name: {{ include "common.name" . }}-job
         image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
         imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
         command:
-        - bash
+        - sh
         - "-c"
         - |
-           set -x
-           if [ ! -d /opt/aai/logroot/AAI-GQ/misc ]; then mkdir -p /opt/aai/logroot/AAI-GQ/misc; fi
-          {{- if (include "common.needTLS" .) }}
-           until nc -w10 -z -v aai.{{.Release.Namespace}} 8443; do echo "Retrying to reach aai on port 8443"; done;
-           bash -x /opt/app/aai-traversal/docker-entrypoint.sh install/updateQueryData.sh
-          {{- else }}
-           until nc -w10 -z -v aai.{{.Release.Namespace}} 80; do echo "Retrying to reach aai on port 80"; done;
-           bash -x /opt/app/aai-traversal/docker-entrypoint.sh install/updateQueryData.sh ;
+           set -x;
+           if [ ! -d /opt/aai/logroot/AAI-GQ/misc ];
+            then mkdir -p /opt/aai/logroot/AAI-GQ/misc;
+           fi
+
+           sh -x /opt/app/aai-traversal/bin/install/updateQueryData.sh ;
+
            {{ include "common.serviceMesh.killSidecar" . | indent 11 | trim }}
-          {{- end }}
+
         env:
         - name: LOCAL_USER_ID
           value: {{ .Values.global.config.userId | quote }}
         - name: LOCAL_GROUP_ID
           value: {{ .Values.global.config.groupId | quote }}
-        resources:
-{{ include "common.resources" . }}
+        resources: {{ include "common.resources" . | nindent 10 }}
         volumeMounts:
-        - mountPath: /etc/localtime
-          name: localtime
-          readOnly: true
         - mountPath: /opt/app/aai-traversal/resources/etc/appprops/janusgraph-realtime.properties
           name: {{ include "common.fullname" . }}-config
           subPath: janusgraph-realtime.properties
@@ -114,10 +131,8 @@ spec:
           subPath: application.properties
         # disable liveness probe when breakpoints set in debugger
         # so K8s doesn't restart unresponsive container
+      serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
       volumes:
-      - name: localtime
-        hostPath:
-          path: /etc/localtime
       - name: {{ include "common.fullname" . }}-logs
         emptyDir: {}
       - name: {{ include "common.fullname" . }}-logs-misc
@@ -127,6 +142,5 @@ spec:
         configMap:
           name: {{ include "common.fullname" . }}
       restartPolicy: OnFailure
-      imagePullSecrets:
-      - name: "{{ include "common.namespace" . }}-docker-registry-key"
+      {{- include "common.imagePullSecrets" . | nindent 6 }}
 {{ end }}

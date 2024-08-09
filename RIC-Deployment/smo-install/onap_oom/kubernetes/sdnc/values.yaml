@@ -22,15 +22,19 @@ global:
   nodePortPrefixExt: 304
   persistence:
     mountPath: /dockerdata-nfs
-  aafEnabled: true
   centralizedLoggingEnabled: true
   mariadbGalera:
+    # flag to enable the DB creation via mariadb-operator
+    useOperator: true
     #This flag allows SO to instantiate its own mariadb-galera cluster
     #If shared instance is used, this chart assumes that DB already exists
     localCluster: false
-    service: mariadb-galera
+    service: &mariadbService mariadb-galera
     internalPort: 3306
-    nameOverride: mariadb-galera
+    nameOverride: &mariadbName mariadb-galera
+    # (optional) if localCluster=false and an external secret is used set this variable
+    #userRootSecret: <secretName>
+
 
 #################################################################
 # Secrets metaconfig
@@ -45,13 +49,18 @@ secrets:
     # override this secret using external one with the same field that is used
     # to pass this to subchart.
     externalSecret: '{{ .Values.global.mariadbGalera.localCluster |
-      ternary ((hasSuffix "sdnc-db-root-password" (index .Values "mariadb-galera" "rootUser" "externalSecret")) |
-                  ternary
-                    ""
-                    (tpl (default "" (index .Values "mariadb-galera" "rootUser" "externalSecret")) .))
-              (include "common.mariadb.secret.rootPassSecretName"
-                (dict "dot" .
-                      "chartName" .Values.global.mariadbGalera.nameOverride)) }}'
+      ternary (( hasSuffix "sdnc-db-root-password" (index .Values "mariadb-galera" "rootUser" "externalSecret")) |
+               ternary
+                  ""
+                  (tpl (default "" (index .Values "mariadb-galera" "rootUser" "externalSecret")) .)
+               )
+               ( (not (empty (default "" .Values.global.mariadbGalera.userRootSecret))) |
+                 ternary
+                   .Values.global.mariadbGalera.userRootSecret
+                   (include "common.mariadb.secret.rootPassSecretName"
+                     (dict "dot" . "chartName" .Values.global.mariadbGalera.nameOverride)
+                   )
+               ) }}'
     password: '{{ (index .Values "mariadb-galera" "rootUser" "password") }}'
   - uid: db-secret
     name: &dbSecretName '{{ include "common.release" . }}-sdnc-db-secret'
@@ -70,14 +79,6 @@ secrets:
     externalSecret: '{{ .Values.config.odlCredsExternalSecret }}'
     login: '{{ .Values.config.odlUser }}'
     password: '{{ .Values.config.odlPassword }}'
-    # For now this is left hardcoded but should be revisited in a future
-    passwordPolicy: required
-  - uid: dmaap-proxy-creds
-    name: &dmaapProxyCredsSecretName '{{ include "common.release" . }}-sdnc-dmaap-proxy-creds'
-    type: basicAuth
-    externalSecret: '{{ .Values.config.dmaapProxyCredsExternalSecret }}'
-    login: '{{ .Values.config.sdnr.dmaapProxy.user }}'
-    password: '{{ .Values.config.sdnr.dmaapProxy.password }}'
     # For now this is left hardcoded but should be revisited in a future
     passwordPolicy: required
   - uid: netbox-apikey
@@ -185,6 +186,11 @@ secrets:
     type: basicAuth
     login: '{{ .Values.config.sdnr.vesCollector.username }}'
     password: '{{ .Values.config.sdnr.vesCollector.password }}'
+  - uid: sdnrdb-secret
+    name: &sdnrdbSecretName '{{ include "common.release" . }}-sdnc-sdnrdb-secret'
+    type: basicAuth
+    login: '{{ index .Values "config" "sdnr" "mariadb" "user" }}'
+    password: '{{ index .Values "config" "sdnr" "mariadb" "password" }}'
 #################################################################
 # Certificates
 #################################################################
@@ -210,7 +216,7 @@ certificates:
 # application images
 
 pullPolicy: Always
-image: onap/sdnc-image:2.2.5
+image: onap/sdnc-image:2.6.1
 
 # flag to enable debugging - application support required
 debugEnabled: false
@@ -324,18 +330,50 @@ config:
     # sdnronly: true starts sdnc container with odl and sdnrwt features only
     sdnronly: false
     sdnrdbTrustAllCerts: true
-    mountpointRegistrarEnabled: false
+    elasticsearch:
+    ## for legacy eleasticsearch database
+      enabled: &esdbenabled true
+      # enabled: &esdbenabled false
+    mariadb:
+      ## for legacy eleasticsearch database
+      enabled: false
+      # enabled: true
+      databaseName: sdnrdb
+      user: sdnrdb
+      externalSecret: *sdnrdbSecretName
+      asyncHandling: true
+      asyncPoolSize: 200
+    kafka:
+      enabled: false
+      consumerGroupPrefix: &consumerGroupPrefix sdnr
+      # Strimzi KafkaUser config see configuration below
+      kafkaUser: &kafkaUser
+        acls:
+        - name: unauthenticated.SEC_
+          type: topic
+          patternType: prefix
+          operations: [Read]
+        - name: unauthenticated.VES_PNFREG_OUTPUT
+          type: topic
+          patternType: literal
+          operations: [Read]
+        - name: *consumerGroupPrefix
+          type: group
+          patternType: prefix
+          operations: [Read]
+      ## set if bootstrap server is not OOM standard
+      # bootstrapServers: []
+      ## set connection parameters if not default
+      # securityProtocol: PLAINTEXT
+      # saslMechanism: SCRAM-SHA-512
+      ## saslJassConfig: provided by secret
+
+
     mountpointStateProviderEnabled: false
     netconfCallHome:
       enabled: true
-    #
-    # enable and set dmaap-proxy for mountpointRegistrar
-    dmaapProxy:
-      enabled: false
-      usepwd: true
-      user: addUserHere
-      password: addPasswordHere
-      url: addProxyUrlHere
+
+
     oauth:
       enabled: false
       tokenIssuer: ONAP SDNC
@@ -366,32 +404,19 @@ config:
       username: sample1
       password: sample1
       address: dcae-ves-collector.onap
-      port: 8443
+      port: 8080
       version: v7
       reportingEntityName: ONAP SDN-R
       eventLogMsgDetail: SHORT
 
-# dependency / sub-chart configuration
-certInitializer:
-  nameOverride: sdnc-cert-initializer
-  truststoreMountpath: /opt/onap/sdnc/data/stores
-  fqdn: "sdnc"
-  app_ns: "org.osaaf.aaf"
-  fqi: "sdnc@sdnc.onap.org"
-  fqi_namespace: org.onap.sdnc
-  public_fqdn: "sdnc.onap.org"
-  aafDeployFqi: "deployer@people.osaaf.org"
-  aafDeployPass: demo123456!
-  cadi_latitude: "38.0"
-  cadi_longitude: "-72.0"
-  credsPath: /opt/app/osaaf/local
-  aaf_add_config: >
-    cd /opt/app/osaaf/local;
-    /opt/app/aaf_config/bin/agent.sh local showpass {{.Values.fqi}} {{ .Values.fqdn }} | grep cadi_keystore_password= | cut -d= -f 2 > {{ .Values.credsPath }}/.pass 2>&1
+# Strimzi KafkaUser/Topic config on top level
+kafkaUser: *kafkaUser
+
 
 # dependency / sub-chart configuration
 network-name-gen:
   enabled: true
+
 mariadb-galera: &mariadbGalera
   nameOverride: &sdnc-db sdnc-db
   config: &mariadbGaleraConfig
@@ -401,15 +426,19 @@ mariadb-galera: &mariadbGalera
   rootUser:
     externalSecret: *rootDbSecret
   db:
+    name: *sdncDbName
     user: *dbUser
     externalSecret: *dbSecretName
   service:
-    name: sdnc-dbhost
+    name: sdnc-db
   sdnctlPrefix: sdnc
   persistence:
     mountSubPath: sdnc/mariadb-galera
     enabled: true
   replicaCount: 1
+  mariadbOperator:
+    galera:
+      enabled: false
   serviceAccount:
     nameOverride: *sdnc-db
 
@@ -461,8 +490,6 @@ sdnc-ansible-server:
 dgbuilder:
   enabled: true
   nameOverride: sdnc-dgbuilder
-  certInitializer:
-    nameOverride: sdnc-dgbuilder-cert-initializer
   config:
     db:
       dbName: *sdncDbName
@@ -472,8 +499,8 @@ dgbuilder:
           (include "common.mariadb.secret.rootPassSecretName"
             (dict "dot" . "chartName" "mariadb-galera")) }}'
       userCredentialsExternalSecret: *dbSecretName
-    dbPodName: mariadb-galera
-    dbServiceName: mariadb-galera
+    dbPodName: *mariadbName
+    dbServiceName: *mariadbService
     # This should be revisited and changed to plain text
     dgUserPassword: cc03e747a6afbbcbf8be7668acfebee5
   serviceAccount:
@@ -481,17 +508,17 @@ dgbuilder:
   mariadb-galera:
   service:
     name: sdnc-dgbuilder
-    nodePort: "03"
+    ports:
+    - name: http
+      port: 3100
+      nodePort: "03"
 
   ingress:
     enabled: false
     service:
-      - baseaddr: "sdnc-dgbuilder"
+      - baseaddr: "sdnc-dgbuilder-ui"
         name: "sdnc-dgbuilder"
-        port: 3000
-      - baseaddr: "sdnc-web-service"
-        name: "sdnc-web-service"
-        port: 8443
+        port: 3100
     config:
       ssl: "redirect"
 
@@ -500,12 +527,9 @@ dgbuilder:
 # local elasticsearch cluster
 localElasticCluster: true
 elasticsearch:
+  enabled: *esdbenabled
   nameOverride: &elasticSearchName sdnrdb
   name: sdnrdb-cluster
-  certInitializer:
-    fqdn: "sdnc"
-    fqi_namespace: org.onap.sdnc
-    fqi: "sdnc@sdnc.onap.org"
   service:
     name: *elasticSearchName
   master:
@@ -521,6 +545,8 @@ elasticsearch:
 # enable
 sdnc-web:
   enabled: true
+  ## set if web socket port should not be default
+  # sdnrWebsocketPort: *sdnrWebsocketPort
 # default number of instances
 replicaCount: 1
 
@@ -543,11 +569,10 @@ readiness:
 service:
   type: NodePort
   name: sdnc
-  portName: sdnc
+  portName: http
   internalPort: 8181
   internalPort2: 8101
   internalPort3: 8080
-  internalPort4: 8443
 
   #port
   externalPort: 8282
@@ -556,7 +581,6 @@ service:
 
   externalPort3: 8280
 
-  externalPort4: 8443
   nodePort4: 67
 
   clusterPort: 2550
@@ -570,8 +594,12 @@ service:
   geoNodePort5: 65
   geoNodePort6: 66
 
-  callHomePort: 6666
+  callHomePort: &chport 4334
   callHomeNodePort: 66
+  ## set if web socket port should not be default
+  ## change in sdnc-web section as well
+  # sdnrWebsocketPort: &sdnrWebsocketPort 8182
+
 
 ## Persist data to a persitent volume
 persistence:
@@ -598,30 +626,40 @@ persistence:
   journalPath: /opt/opendaylight/segmented-journal
   snapshotsPath: /opt/opendaylight/snapshots
 
-certpersistence:
-  enabled: true
-
-  ## A manually managed Persistent Volume and Claim
-  ## Requires persistence.enabled: true
-  ## If defined, PVC must be created manually before volume will be bound
-  # existingClaim:
-
-  volumeReclaimPolicy: Retain
-  accessMode: ReadWriteOnce
-  size: 50Mi
-  mountPath: /dockerdata-nfs
-  mountSubPath: sdnc/certs
-  certPath: /opt/app/osaaf
-  ##storageClass: "manual"
-
 ingress:
   enabled: false
   service:
-    - baseaddr: "sdnc.api"
-      name: "sdnc"
-      port: 8443
+  - baseaddr: "sdnc-api"
+    name: "sdnc"
+    port: 8282
+  - baseaddr: "sdnc-callhome"
+    name: "sdnc-callhome"
+    port: *chport
+    protocol: tcp
+    exposedPort: *chport
+    exposedProtocol: TCP
   config:
     ssl: "redirect"
+
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: a1policymanagement-read
+      - serviceAccount: cds-blueprints-processor-read
+      - serviceAccount: consul-read
+      - serviceAccount: ncmp-dmi-plugin-read
+      - serviceAccount: policy-drools-pdp-read
+      - serviceAccount: robot-read
+      - serviceAccount: sdnc-ansible-server-read
+      - serviceAccount: sdnc-dmaap-listener-read
+      - serviceAccount: sdnc-prom-read
+      - serviceAccount: sdnc-ueb-listener-read
+      - serviceAccount: sdnc-web-read
+      - serviceAccount: so-sdnc-adapter-read
+      - serviceAccount: istio-ingress
+        namespace: istio-ingress
+    authorizedPrincipalsSdnHosts:
+      - serviceAccount: sdnc-read
 
 #Resource Limit flavor -By Default using small
 flavor: small
@@ -630,18 +668,18 @@ flavor: small
 resources:
   small:
     limits:
-      cpu: 2
-      memory: 4Gi
+      cpu: "2"
+      memory: "4.7Gi"
     requests:
-      cpu: 1
-      memory: 2Gi
+      cpu: "1"
+      memory: "4.7Gi"
   large:
     limits:
-      cpu: 4
-      memory: 8Gi
+      cpu: "4"
+      memory: "9.4Gi"
     requests:
-      cpu: 2
-      memory: 4Gi
+      cpu: "2"
+      memory: "9.4Gi"
   unlimited: {}
 
 #Pods Service Account
@@ -653,3 +691,8 @@ serviceAccount:
 #Log configuration
 log:
   path: /var/log/onap
+
+readinessCheck:
+  wait_for:
+    services:
+      - '{{ include "common.mariadbService" . }}'

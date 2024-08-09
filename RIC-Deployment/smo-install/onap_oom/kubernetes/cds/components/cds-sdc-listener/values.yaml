@@ -1,4 +1,5 @@
 # Copyright (c) 2019 Bell Canada
+# Modification Copyright © 2022 Nordix Foundation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,14 +30,23 @@ global:
 # Application configuration defaults.
 #################################################################
 # application image
-image: onap/ccsdk-sdclistener:1.2.1
+image: onap/ccsdk-sdclistener:1.5.3
 name: sdc-listener
 pullPolicy: Always
 
 # flag to enable debugging - application support required
 debugEnabled: false
 
-# application configuration
+kafkaUser:
+  acls:
+    - name: cds
+      type: group
+      operations: [Read]
+    - name: SDC-DISTR
+      type: topic
+      patternType: prefix
+      operations: [Read, Write]
+
 config:
   appConfigDir: /opt/app/onap/config
 
@@ -61,10 +71,11 @@ readiness:
 
 service:
   type: ClusterIP
-  http:
-    portName: cds-sdc-listener-http
-    internalPort: 8080
-    externalPort: 8080
+  name: cds-sdc-listener
+  internalPort: 8080
+  ports:
+    - name: http
+      port: 8080
 
 persistence:
   enabled: true
@@ -86,18 +97,18 @@ flavor: small
 resources:
   small:
     limits:
-      cpu: 2
-      memory: 4Gi
+      cpu: "1"
+      memory: "700Mi"
     requests:
-      cpu: 1
-      memory: 1Gi
+      cpu: "0.5"
+      memory: "700Mi"
   large:
     limits:
-      cpu: 4
-      memory: 8Gi
+      cpu: "2"
+      memory: "1.4Gi"
     requests:
-      cpu: 2
-      memory: 4Gi
+      cpu: "1"
+      memory: "1.4Gi"
   unlimited: {}
 
 #Pods Service Account

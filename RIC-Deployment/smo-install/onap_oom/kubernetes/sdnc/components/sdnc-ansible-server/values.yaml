@@ -18,6 +18,8 @@
 global:
   nodePortPrefix: 302
   mariadbGalera:
+    # flag to enable the DB creation via mariadb-operator
+    useOperator: true
     #This flag allows SO to instantiate its own mariadb-galera cluster
     #If shared instance is used, this chart assumes that DB already exists
     localCluster: false
@@ -49,7 +51,7 @@ secrets:
 # Application configuration defaults.
 #################################################################
 # application image
-image: onap/sdnc-ansible-server-image:2.2.5
+image: onap/sdnc-ansible-server-image:2.6.1
 pullPolicy: Always
 
 # flag to enable debugging - application support required
@@ -78,6 +80,9 @@ mariadb-galera:
   persistence:
     enabled: true
     mountSubPath: ansible-server/maria/data
+  mariadbOperator:
+    galera:
+      enabled: false
 
 # default number of instances
 replicaCount: 1
@@ -101,12 +106,17 @@ readiness:
 service:
   type: ClusterIP
   name: sdnc-ansible-server
-  portName: sdnc-ansible-server
   internalPort: 8000
-  externalPort: 8000
+  ports:
+    - name: http
+      port: 8000
 
 ingress:
   enabled: false
+
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals: []
 
 #Resource Limit flavor -By default using small
 flavor: small
@@ -116,18 +126,18 @@ flavor: small
 resources:
   small:
     limits:
-      cpu: 1
-      memory: 1Gi
+      cpu: "1"
+      memory: "500Mi"
     requests:
-      cpu: 0.5
-      memory: 500Mi
+      cpu: "0.5"
+      memory: "500Mi"
   large:
     limits:
-      cpu: 2
-      memory: 2Gi
+      cpu: "2"
+      memory: "1Gi"
     requests:
-      cpu: 1
-      memory: 1Gi
+      cpu: "1"
+      memory: "1Gi"
   unlimited: {}
 
 #Pods Service Account

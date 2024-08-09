@@ -32,7 +32,7 @@ global:
   #repository: nexus3.onap.org:10001
 
   # readiness check
-  readinessImage: onap/oom/readiness:3.0.1
+  readinessImage: onap/oom/readiness:6.0.3
 
   # logging agent - temporary repo until images migrated to nexus3
   loggingRepository: docker.elastic.co
@@ -52,14 +52,10 @@ global:
 # Enable/disable and configure helm charts (ie. applications)
 # to customize the ONAP deployment.
 #################################################################
-aaf:
-  enabled: false
 aai:
   enabled: false
   aai-cassandra:
     replicaCount: 1
-appc:
-  enabled: false
 cassandra:
   enabled: false
   replicaCount: 1
@@ -67,25 +63,13 @@ clamp:
   enabled: false
 cli:
   enabled: false
-consul:
-  enabled: false
-contrib:
-  enabled: false
 cps:
-  enabled: false
-dcaegen2:
   enabled: false
 dcaegen2-services:
   enabled: false
 holmes:
   enabled: false
 dmaap:
-  enabled: false
-log:
-  enabled: false
-  log-logstash:
-    replicaCount: 1
-sniro-emulator:
   enabled: false
 oof:
   enabled: false
@@ -99,9 +83,7 @@ nbi:
   enabled: false
 policy:
   enabled: false
-pomba:
-  enabled: false
-portal:
+portal-ng:
   enabled: false
 robot:
   enabled: true
@@ -139,11 +121,11 @@ so:
   mariadb:
     config:
       mariadbRootPassword: password
+strimzi:
+  enabled: false
 uui:
   enabled: false
 vfc:
-  enabled: false
-vid:
   enabled: false
 vnfsdk:
   enabled: false

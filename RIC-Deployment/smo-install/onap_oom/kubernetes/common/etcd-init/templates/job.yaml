@@ -27,6 +27,12 @@ spec:
   backoffLimit: {{ .Values.backoffLimit }}
   template:
     metadata:
+      annotations:
+        # Workarround to exclude K8S API from istio communication
+        # as init-container (readinessCheck) does not work with the
+        # Istio CNI plugin, see:
+        # (https://istio.io/latest/docs/setup/additional-setup/cni/#compatibility-with-application-init-containers)
+        traffic.sidecar.istio.io/excludeOutboundPorts: "443"
       labels:
         app: {{ include "common.name" . }}
         release: {{ include "common.release" . }}
@@ -37,8 +43,8 @@ spec:
         command:
         - /app/ready.py
         args:
-        - --container-name
-        - {{ .Values.etcd.containerName }}
+        - --service-name
+        - {{ .Values.etcd.serviceName }}
         env:
         - name: NAMESPACE
           valueFrom:
@@ -47,6 +53,13 @@ spec:
               fieldPath: metadata.namespace
         image: {{ include "repositoryGenerator.image.readiness" . }}
         imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        resources:
+          limits:
+            cpu: "100m"
+            memory: "500Mi"
+          requests:
+            cpu: "3m"
+            memory: "20Mi"
       containers:
       - name: {{ include "common.name" . }}
         image: {{ include "repositoryGenerator.dockerHubRepository" . }}/{{ .Values.image }}
@@ -55,6 +68,8 @@ spec:
           - /bin/sh
           - -ec
           - |
+            {{- if include "common.onServiceMesh" . }}
+            echo "waiting 15s for istio side cars to be up"; sleep 15s;{{- end }}
             # Create users
             export ETCDCTL_ENDPOINTS=http://${ETCD_HOST}:${ETCD_PORT}
             export ETCDCTL_API=3
@@ -84,21 +99,14 @@ spec:
           value: "{{ .Values.config.appRole }}"
         - name: KEY_PREFIX
           value: "{{ .Values.config.keyPrefix }}"
-        volumeMounts:
-        - mountPath: /etc/localtime
-          name: localtime
-          readOnly: true
-        resources: {{ include "common.resources" . | nindent 12 }}
+        resources: {{ include "common.resources" . | nindent 10 }}
+      {{ include "common.waitForJobContainer" . | indent 6 | trim }}
       {{- if .Values.nodeSelector }}
       nodeSelector: {{ toYaml .Values.nodeSelector | nindent 10 }}
       {{- end -}}
       {{- if .Values.affinity }}
       affinity: {{ toYaml .Values.affinity | nindent 10 }}
       {{- end }}
-      volumes:
-      - name: localtime
-        hostPath:
-          path: /etc/localtime
+      serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
       restartPolicy: Never
-      imagePullSecrets:
-      - name: "{{ include "common.namespace" . }}-docker-registry-key"
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

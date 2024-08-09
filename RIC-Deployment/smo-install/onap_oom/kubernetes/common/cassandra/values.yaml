@@ -21,6 +21,65 @@ global: # global defaults
     mountPath: /dockerdata-nfs
     backup:
       mountPath: /dockerdata-nfs/backup
+  cassandra:
+    # flag to enable the DB creation via k8ssandra-operator
+    useOperator: true
+    # if useOperator set to "true", set "enableServiceAccount to "false"
+    # as the SA is created by the Operator
+    enableServiceAccount: false
+
+k8ssandraOperator:
+  cassandraVersion: 4.1.3
+  persistence:
+    #storageClassName: default
+    size: 10Gi
+  config:
+    clusterName: cassandra
+    secretName: &secretName cassandra-default-user
+    superuserName: &superusername cassandra
+    superuserPassword: &superuserpassword cassandra
+    casOptions:
+      authorizer: AllowAllAuthorizer
+      read_request_timeout: 10000ms
+      write_request_timeout: 10000ms
+      counter_write_request_timeout: 15000ms
+    jvmOptions:
+      heap_initial_size: 512M
+      heap_max_size: 8192M
+    hostNetwork: false
+  datacenters:
+    - name: dc1
+      size: 3
+  reaper:
+    enabled: true
+  stargate:
+    enabled: false
+    tag: v1.0.77
+    size: 1
+    jvmOptions:
+      heapSize: 384Mi
+
+#################################################################
+# Secrets metaconfig
+# used to store the default superuser for k8ssandra-operator
+#################################################################
+secrets:
+  - uid: *secretName
+    type: genericKV
+    externalSecret: '{{ tpl (default "" .Values.k8ssandraOperator.config.userCredentialsExternalSecret) . }}'
+    envs:
+      - name: username
+        value: *superusername
+      - name: password
+        value: *superuserpassword
+
+ingress:
+  enabled: false
+  service:
+    - baseaddr: "reaper-dc1"
+      path: "/webui"
+      name: "cassandra-dc1-reaper-service"
+      port: 8080
 
 # application image
 image: cassandra:3.11.4
@@ -33,8 +92,8 @@ debugEnabled: false
 config:
   cluster_domain: cluster.local
   heap:
-    max: 2048M
-    min: 100M
+    max: 4096M
+    min: 200M
   jvmOpts: -Dcassandra.consistent.rangemovement=false
   clusterName: cassandra
   dataCenter: Pod
@@ -99,13 +158,15 @@ service:
   - name: tcp-agent
     port: 61621
 
-podAnnotations: {}
+podAnnotations:
+  #  sidecar.istio.io/inject: "false"
+  traffic.sidecar.istio.io/excludeInboundPorts: "7000,7001,7199,50051"
+  traffic.sidecar.istio.io/includeInboundPorts: '*'
+  traffic.sidecar.istio.io/excludeOutboundPorts: "7000,7001,7199,50051"
+
 podManagementPolicy: OrderedReady
 updateStrategy:
   type: RollingUpdate
-
-ingress:
-  enabled: false
 
 persistence:
   enabled: true
@@ -148,11 +209,11 @@ configOverrides: {}
   # Minimum memory for production is 4 CPU cores and 8GB memory
 resources:
   limits:
-    cpu: 0.8
-    memory: 4Gi
+    cpu: "2"
+    memory: "16Gi"
   requests:
-    cpu: 0.2
-    memory: 2.5Gi
+    cpu: "0.2"
+    memory: "2.5Gi"
 backup:
   enabled: false
   cron: "00 00 * * *"

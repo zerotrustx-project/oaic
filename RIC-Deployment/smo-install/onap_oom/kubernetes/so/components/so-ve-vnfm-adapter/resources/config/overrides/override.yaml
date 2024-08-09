@@ -15,13 +15,16 @@
 */}}
 
 server:
+  {{- if include "common.onServiceMesh" . }}
+  forward-headers-strategy: none
+  {{- end }}
   port: {{ include "common.getPort" (dict "global" . "name" "http") }}
 
 vevnfmadapter:
-  endpoint: https://msb-iag:30283/api/{{ include "common.servicename" . }}/v1
+  endpoint: http://msb-iag:80/api/{{ include "common.servicename" . }}/v1
 
 aai:
-  endpoint: https://aai.{{ include "common.namespace" . }}:8443
+  endpoint: http://aai.{{ include "common.namespace" . }}:80
 
 dmaap:
   endpoint: http://message-router.{{ include "common.namespace" . }}:3904

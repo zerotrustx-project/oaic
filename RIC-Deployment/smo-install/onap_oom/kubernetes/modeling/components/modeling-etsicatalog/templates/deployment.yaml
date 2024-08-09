@@ -41,8 +41,13 @@ spec:
       - command:
         - /app/ready.py
         args:
-        - -j
-        - "{{ include "common.release" . }}-{{ include "common.name" . }}-config-job"
+{{- if .Values.global.mariadbGalera.localCluster }}
+        - --service-name
+        - {{ index .Values "mariadb-galera" "service" "name" }}
+{{- else }}
+        - --job-name
+        - {{ include "common.release" . }}-etsicatalog-db-config-job
+{{- end }}
         env:
         - name: NAMESPACE
           valueFrom:
@@ -52,7 +57,16 @@ spec:
         image: {{ include "repositoryGenerator.image.readiness" . }}
         imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
         name: {{ include "common.name" . }}-job-readiness
-      {{ include "common.readinessCheck.waitFor" (dict "dot" . "wait_for" .Values.readinessCheck.wait_for.msb ) | indent 6 | trim }}
+        resources:
+          limits:
+            cpu: "100m"
+            memory: "500Mi"
+          requests:
+            cpu: "3m"
+            memory: "20Mi"
+      {{ if .Values.config.msb_enabled }}
+      {{ include "common.readinessCheck.waitFor" . | nindent 6 }}
+      {{ end }}
       - command:
         - /bin/sh
         - -c
@@ -84,18 +98,30 @@ spec:
             initialDelaySeconds: {{ .Values.readiness.initialDelaySeconds }}
             periodSeconds: {{ .Values.readiness.periodSeconds }}
           env:
+          {{- if and (include "common.needTLS" .) (eq .Values.config.ssl_enabled true) }}
           - name: SSL_ENABLED
-            value: "{{ .Values.config.ssl_enabled }}"
+            value: "true"
+          {{- else }}
+          - name: SSL_ENABLED
+            value: "false"
+          {{- end }}
           - name: MSB_ENABLED
             value: "{{ .Values.config.msb_enabled }}"
+          {{- if (include "common.needTLS" .) }}
           - name: MSB_ADDR
-            value: "{{ .Values.config.msbProtocol }}://{{ .Values.config.msbServiceName }}:{{ .Values.config.msbPort }}"
+            value: "{{ .Values.config.msbProtocol }}s://{{ .Values.config.msbServiceName }}:{{ .Values.config.msbPort }}"
           - name: SDC_ADDR
-            value: "{{ .Values.config.sdcProtocol }}://{{ .Values.config.sdcServiceName }}:{{ .Values.config.sdcPort }}"
+            value: "{{ .Values.config.sdcProtocol }}s://{{ .Values.config.sdcServiceName }}:{{ .Values.config.sdcPort }}"
+          {{- else }}
+          - name: MSB_ADDR
+            value: "{{ .Values.config.msbProtocol }}://{{ .Values.config.msbServiceName }}:{{ .Values.config.msbPlainPort }}"
+          - name: SDC_ADDR
+            value: "{{ .Values.config.sdcProtocol }}://{{ .Values.config.sdcServiceName }}:{{ .Values.config.sdcPlainPort }}"
+          {{- end }}
           - name: DMAAP_ENABLED
             value: "{{ .Values.config.dmaap_enabled }}"
           - name: DMAAP_ADDR
-            value: "{{ .Values.config.dmaapProtocol }}://{{ .Values.config.dmaapServiceName }}:{{ .Values.config.dmaapPort }}"
+            value: "{{ .Values.config.dmaapProtocol }}{{ (eq "true" (include "common.needTLS" .)) | ternary "s" "" }}://{{ .Values.config.dmaapServiceName }}:{{ .Values.config.dmaapPort }}"
           - name: DB_IP
             value: "{{ include "common.mariadbService" . }}"
           - name: DB_PORT
@@ -107,16 +133,12 @@ spec:
           volumeMounts:
           - name: {{ include "common.fullname" . }}-etsicatalog
             mountPath: /service/modeling/etsicatalog/static
-          - name: {{ include "common.fullname" . }}-localtime
-            mountPath: /etc/localtime
-            readOnly: true
           - name: {{ include "common.fullname" . }}-logs
             mountPath: {{ .Values.log.path }}
           - name: {{ include "common.fullname" . }}-logconfig
             mountPath: /opt/modeling/etsicatalog/config/log.yml
             subPath: log.yml
-          resources:
-{{ include "common.resources" . | indent 12 }}
+          resources: {{ include "common.resources" . | nindent 12 }}
         {{- if .Values.nodeSelector }}
         nodeSelector:
 {{ toYaml .Values.nodeSelector | indent 10 }}
@@ -137,9 +159,6 @@ spec:
         {{- else }}
           emptyDir: {}
         {{- end }}
-        - name: {{ include "common.fullname" . }}-localtime
-          hostPath:
-            path: /etc/localtime
         - name:  {{ include "common.fullname" . }}-logs
           emptyDir: {}
         - name: {{ include "common.fullname" . }}-logconfig
@@ -147,5 +166,4 @@ spec:
             name : {{ include "common.fullname" . }}-logging-configmap
 
         {{ include "common.log.volumes" . | nindent 8 }}
-      imagePullSecrets:
-      - name: "{{ include "common.namespace" . }}-docker-registry-key"
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

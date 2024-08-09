@@ -20,14 +20,10 @@ global:
   nodePortPrefixExt: 304
   persistence:
     mountPath: /dockerdata-nfs
-  security:
-    aaf:
-      enabled: false
-  aaf:
-    auth:
-      header: Basic c29Ac28ub25hcC5vcmc6ZGVtbzEyMzQ1Ngo=
   mariadbGalera:
-    serviceName: mariadb-galera
+    # flag to enable the DB creation via mariadb-operator
+    useOperator: true
+    service: mariadb-galera
     servicePort: '3306'
 
 # Secrets metaconfig
@@ -74,6 +70,15 @@ secrets:
 image: onap/so/so-oof-adapter:1.8.3
 pullPolicy: Always
 
+# Local mariadb galera instance default name
+mariadb-galera:
+  nameOverride: so-mariadb-galera
+  service:
+    internalPort: 3306
+  mariadbOperator:
+    galera:
+      enabled: false
+
 mso:
   msoKey: 07a7159d3bf51a0e53be7a8f89699be7
   oof:
@@ -87,23 +92,19 @@ containerPort: *containerPort
 logPath: ./logs/oof-adapter/
 app: so-oof-adapter
 service:
-    type: ClusterIP
-    ports:
-      - name: api
-        port: *containerPort
+  type: ClusterIP
+  ports:
+    - name: http
+      port: *containerPort
 updateStrategy:
-    type: RollingUpdate
-    maxUnavailable: 1
-    maxSurge: 1
+  type: RollingUpdate
+  maxUnavailable: 1
+  maxSurge: 1
 
-
+#################################################################
+# soHelpers part
+#################################################################
 soHelpers:
-  nameOverride: so-oof-adapter-cert-init
-  certInitializer:
-    nameOverride: so-oof-adapter-cert-init
-    credsPath: /opt/app/osaaf/local
-  cadi:
-    apiEnforcement: org.onap.so.oofadapterPerm
   containerPort: *containerPort
 
 # Resource Limit flavor -By Default using small
@@ -112,30 +113,35 @@ flavor: small
 resources:
   small:
     limits:
-      memory: 4Gi
-      cpu: 2000m
+      cpu: "1"
+      memory: "1Gi"
     requests:
-      memory: 1Gi
-      cpu: 500m
+      cpu: "0.5"
+      memory: "1Gi"
   large:
     limits:
-      memory: 8Gi
-      cpu: 4000m
+      cpu: "2"
+      memory: "2Gi"
     requests:
-      memory: 2Gi
-      cpu: 1000m
+      cpu: "1"
+      memory: "2Gi"
   unlimited: {}
 livenessProbe:
-    path: /manage/health
-    port: *containerPort
-    scheme: HTTP
-    initialDelaySeconds: 600
-    periodSeconds: 60
-    timeoutSeconds: 10
-    successThreshold: 1
-    failureThreshold: 3
+  path: /manage/health
+  port: *containerPort
+  scheme: HTTP
+  initialDelaySeconds: 600
+  periodSeconds: 60
+  timeoutSeconds: 10
+  successThreshold: 1
+  failureThreshold: 3
 ingress:
   enabled: false
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: so-bpmn-infra-read
+      - serviceAccount: so-read
 nodeSelector: {}
 tolerations: []
 affinity: {}

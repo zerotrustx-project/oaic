@@ -1,6 +1,6 @@
 {{/*
 # ============LICENSE_START=======================================================
-#  Copyright (c) 2021 Bell Canada.
+#  Copyright (c) 2021-2022 Bell Canada.
 # ================================================================================
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,26 +26,10 @@ spec:
   selector: {{- include "common.selectors" . | nindent 4 }}
   serviceName: {{ include "common.servicename" . }}
   template:
-    metadata: {{- include "common.templateMetadata" . | nindent 6 }}
+    metadata: {{- include "common.templateMetadata" (dict "ignoreHelmChart" true "dot" . ) | nindent 6 }}
     spec:
       serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . ) }}
       {{ include "common.podSecurityContext" . | indent 10 | trim}}
-      initContainers:
-        # we shouldn't need this but for unknown reason, it's fsGroup is not
-        # applied
-        - name: fix-permission
-          command:
-            - /bin/sh
-          args:
-            - -c
-            - chown -R {{ .Values.securityContext.user_id }}:{{ .Values.securityContext.group_id }} /var/lib/postgresql/data
-          image: {{ include "repositoryGenerator.image.busybox" . }}
-          imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
-          securityContext:
-            runAsUser: 0
-          volumeMounts:
-            - mountPath: /var/lib/postgresql/data
-              name: {{ include "common.fullname" . }}
       containers:
         - name: {{ include "common.name" . }}
           image: {{ include "repositoryGenerator.dockerHubRepository" . }}/{{ .Values.image }}
@@ -74,8 +58,7 @@ spec:
             {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "root-creds" "key" "password") | indent 14 }}
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata
-          resources:
-{{ include "common.resources" . | indent 12 }}
+          resources: {{ include "common.resources" . | nindent 12 }}
           volumeMounts:
             - name: {{ include "common.fullname" . }}-init
               mountPath: /docker-entrypoint-initdb.d
@@ -99,5 +82,5 @@ spec:
   {{- end }}
  {{if and .Values.persistence.enabled (not .Values.persistence.existingClaim) }}
   volumeClaimTemplates:
-    - {{ include "common.PVCTemplate" (dict "dot" . "suffix" "data" "persistenceInfos" .Values.persistence) | indent 6 | trim }}
+    - {{ include "common.PVCTemplate" (dict "dot" . "suffix" "data" "persistenceInfos" .Values.persistence "ignoreHelmChart" true) | indent 6 | trim }}
 {{- end }}

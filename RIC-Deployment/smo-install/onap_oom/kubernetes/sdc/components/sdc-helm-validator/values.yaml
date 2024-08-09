@@ -30,6 +30,11 @@ service:
     - name: &port http
       port: *svc_port
 
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: sdc-be-read
+
 liveness:
   initialDelaySeconds: 1
   periodSeconds: 10
@@ -53,16 +58,16 @@ flavor: small
 resources:
   small:
     limits:
-      cpu: 1
-      memory: 256Mi
+      cpu: "1"
+      memory: "500Mi"
     requests:
-      cpu: 1
-      memory: 256Mi
+      cpu: "0.5"
+      memory: "500Mi"
   large:
     limits:
-      cpu: 2
-      memory: 1Gi
+      cpu: "2"
+      memory: "1Gi"
     requests:
-      cpu: 1
-      memory: 256Mi
+      cpu: "1"
+      memory: "1Gi"
   unlimited: {}

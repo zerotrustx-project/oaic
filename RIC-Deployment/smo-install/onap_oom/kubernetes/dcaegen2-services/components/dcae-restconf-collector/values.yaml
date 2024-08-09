@@ -1,6 +1,8 @@
 # ================================ LICENSE_START =============================
 # ============================================================================
 # Copyright (c) 2021-2022 AT&T Intellectual Property. All rights reserved.
+# Copyright (c) 2022-2023 J. F. Lucas. All rights reserved.
+# Copyright (c) 2023 Deutsche Telekom AG. All rights reserved.
 # ============================================================================
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -40,18 +42,11 @@ secrets:
     password: '{{ .Values.controllerCreds.password }}'
     passwordPolicy: required
 
-
-#################################################################
-# InitContainer Images.
-#################################################################
-tlsImage: onap/org.onap.dcaegen2.deployments.tls-init-container:2.1.0
-consulLoaderImage: onap/org.onap.dcaegen2.deployments.consul-loader-container:1.1.1
-
 #################################################################
 # Application Configuration Defaults.
 #################################################################
 # Application Image
-image: onap/org.onap.dcaegen2.collectors.restconfcollector:1.2.7
+image: onap/org.onap.dcaegen2.collectors.restconfcollector:1.4.1
 pullPolicy: Always
 
 # Log directory where logging sidecar should look for log files
@@ -61,20 +56,11 @@ log:
   path: null # /opt/app/restconfcollector/logs
 logConfigMapNamePrefix: '{{ include "common.fullname" . }}'
 
-# Directory where TLS certs should be stored
-# if absent, no certs will be retrieved and stored
-certDirectory: /opt/app/dcae-certificate
-
-# TLS role -- set to true if microservice acts as server
-# If true, an init container will retrieve a server cert
-# and key from AAF and mount them in certDirectory.
-tlsServer: true
-
 # Dependencies
 readinessCheck:
   wait_for:
-    - dcae-config-binding-service
-    - aaf-cm
+    services:
+      - message-router
 
 # Probe Configuration
 readiness:
@@ -97,6 +83,22 @@ service:
       port_protocol: http
       nodePort: 16
       useNodePortExt: true
+
+ingress:
+  enabled: false
+  service:
+    - baseaddr: "dcae-restconf-collector-api"
+      name: "dcae-restconf-collector"
+      port: 8443
+      plain_port: 8080
+  config:
+    ssl: "redirect"
+
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: istio-ingress
+        namespace: istio-ingress
 
 # AAF Credentials
 controllerCreds:
@@ -123,12 +125,14 @@ applicationConfig:
   collector.rcc.inputQueue.maxPending: '8096'
   tomcat.maxthreads: '200'
   collector.rcc.service.port: '8080'
-  collector.rcc.service.secure.port: '8687'
-  collector.rcc.keystore.file.location: /opt/app/dcae-certificate/cert.jks
-  collector.rcc.keystore.passwordfile: /opt/app/dcae-certificate/jks.pass
-  collector.rcc.keystore.alias: dynamically generated
-  collector.rcc.truststore.file.location: /opt/app/dcae-certificate/trust.jks
-  collector.rcc.truststore.passwordfile: /opt/app/dcae-certificate/trust.pass
+  # Disabling of secure port not working (DCAEGEN2-3336)
+  collector.rcc.service.secure.port: '0'
+  #collector.rcc.service.secure.port: '8687'
+  #collector.rcc.keystore.file.location: /opt/app/dcae-certificate/cert.jks
+  #collector.rcc.keystore.passwordfile: /opt/app/dcae-certificate/jks.pass
+  #collector.rcc.keystore.alias: dynamically generated
+  #collector.rcc.truststore.file.location: /opt/app/dcae-certificate/trust.jks
+  #collector.rcc.truststore.passwordfile: /opt/app/dcae-certificate/trust.pass
   #collector.keystore.file.location: /opt/app/dcae-certificate/external/cert.jks
   #collector.keystore.passwordfile: /opt/app/dcae-certificate/external/jks.pass
   collector.header.authflag: '0'
@@ -139,7 +143,6 @@ applicationConfig:
      dmaap_info:
         topic_url: http://message-router:3904/events/unauthenticated.DCAE_RCC_OUTPUT
      type: message_router
-  #rcc_policy: '[{"controller_name":"AccessM&C","controller_restapiUrl":"${CONTROLLER_IP}:{CONTROLLER_PORT}","controller_restapiUser":"${CONTROLLER_USERNAME}","controller_restapiPassword":"${CONTROLLER_PASSWORD}","controller_accessTokenUrl":"/rest/plat/smapp/v1/oauth/token","controller_accessTokenFile":"./etc/access-token.json","controller_accessTokenMethod":"put","controller_subsMethod":"post","controller_subscriptionUrl":"/restconf/v1/operations/huawei-nce-notification-action:establish-subscription","controller_disableSsl":"true","event_details":[{"event_name":"ONT_registration","event_description":"ONTregistartionevent","event_sseventUrlEmbed":"true","event_sseventsField":"output.url","event_sseventsUrl":"null","event_subscriptionTemplate":"./etc/ont_registartion_subscription_template.json","event_unSubscriptionTemplate":"./etc/ont_registartion_unsubscription_template.json","event_ruleId":"12345678","modifyData":"true","modifyMethod": "modifyOntEvent","userData": "remote_id=AC9.0234.0337;svlan=100;cvlan=10;"}]}]'
   rcc_policy: '[{"controller_name":"AccessM&C","controller_restapiUrl":"172.30.0.55:26335","controller_restapiUser":"${CONTROLLER_USERNAME}","controller_restapiPassword":"${CONTROLLER_PASSWORD}","controller_accessTokenUrl":"/rest/plat/smapp/v1/oauth/token","controller_accessTokenFile":"./etc/access-token.json","controller_accessTokenMethod":"put","controller_subsMethod":"post","controller_subscriptionUrl":"/restconf/v1/operations/huawei-nce-notification-action:establish-subscription","controller_disableSsl":"true","event_details":[{"event_name":"ONT_registration","event_description":"ONTregistartionevent","event_sseventUrlEmbed":"true","event_sseventsField":"output.url","event_sseventsUrl":"null","event_subscriptionTemplate":"./etc/ont_registartion_subscription_template.json","event_unSubscriptionTemplate":"./etc/ont_registartion_unsubscription_template.json","event_ruleId":"12345678","modifyData":"true","modifyMethod": "modifyOntEvent","userData": "remote_id=AC9.0234.0337;svlan=100;cvlan=10;"}]}]'
 
 #applicationEnv:
@@ -154,18 +157,18 @@ flavor: small
 resources:
   small:
     limits:
-      cpu: 1
-      memory: 1Gi
+      cpu: "1"
+      memory: "1Gi"
     requests:
-      cpu: 1
-      memory: 1Gi
+      cpu: "1"
+      memory: "1Gi"
   large:
     limits:
-      cpu: 2
-      memory: 2Gi
+      cpu: "2"
+      memory: "2Gi"
     requests:
-      cpu: 2
-      memory: 2Gi
+      cpu: "2"
+      memory: "2Gi"
   unlimited: {}
 
 #Pods Service Account

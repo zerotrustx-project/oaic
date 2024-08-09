@@ -15,8 +15,8 @@
 */}}
 
 aai:
-  auth: {{ include "so.helpers.profileProperty" (dict "condition" .Values.global.security.aaf.enabled "value1" .Values.global.aaf.auth.header "value2" .Values.server.aai.auth ) }}
-  endpoint: https://aai.{{ include "common.namespace" . }}:8443
+  auth: {{ .Values.server.aai.auth }}
+  endpoint: http://aai.{{ include "common.namespace" . }}:80
   enabled: {{ .Values.global.aai.enabled }}
 logging:
   path: logs
@@ -27,6 +27,9 @@ spring:
         password: ${ACTUATOR_PASSWORD}
         role: ACTUATOR
 server:
+  {{- if include "common.onServiceMesh" . }}
+  forward-headers-strategy: none
+  {{- end }}
   port: {{ index .Values.containerPort }}
   tomcat:
     max-threads: 50
@@ -50,4 +53,3 @@ management:
       prometheus:
         enabled: true # Whether exporting of metrics to Prometheus is enabled.
         step: 1m # Step size (i.e. reporting frequency) to use.
-

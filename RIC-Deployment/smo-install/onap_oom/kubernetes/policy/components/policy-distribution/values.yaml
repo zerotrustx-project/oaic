@@ -1,6 +1,7 @@
 #  ============LICENSE_START=======================================================
 #   Copyright (C) 2018 Ericsson. All rights reserved.
 #   Modifications Copyright (C) 2019-2021 AT&T Intellectual Property.
+#   Modifications Copyright (C) 2023 Nordix Foundation
 #  ================================================================================
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -45,16 +46,6 @@ secrets:
     login: '{{ .Values.sdcBe.user }}'
     password: '{{ .Values.sdcBe.password }}'
     passwordPolicy: required
-  - uid: keystore-password
-    type: password
-    externalSecret: '{{ tpl (default "" .Values.certStores.keyStorePasswordExternalSecret) . }}'
-    password: '{{ .Values.certStores.keyStorePassword }}'
-    passwordPolicy: required
-  - uid: truststore-password
-    type: password
-    externalSecret: '{{ tpl (default "" .Values.certStores.trustStorePasswordExternalSecret) . }}'
-    password: '{{ .Values.certStores.trustStorePassword }}'
-    passwordPolicy: required
 
 #################################################################
 # Global configuration defaults.
@@ -67,13 +58,22 @@ global:
 # Application configuration defaults.
 #################################################################
 # application image
-image: onap/policy-distribution:2.7.0
+image: onap/policy-distribution:3.1.3
 pullPolicy: Always
 
 # flag to enable debugging - application support required
 debugEnabled: false
 
-# application configuration
+#Strimzi Kafka User def
+kafkaUser:
+  acls:
+    - name: policy-distribution
+      type: group
+      operations: [Read]
+    - name: SDC-DISTR
+      type: topic
+      patternType: prefix
+      operations: [Read, Write]
 
 restServer:
   user: healthcheck
@@ -87,27 +87,6 @@ papParameters:
 sdcBe:
   user: policy
   password: Kp8bJ4SXszM0WXlhak3eHlcse2gAw84vaoGGmJvUy2U
-certStores:
-  keyStorePassword: Pol1cy_0nap
-  trustStorePassword: Pol1cy_0nap
-
-certInitializer:
-  nameOverride: policy-distribution-cert-initializer
-  aafDeployFqi: deployer@people.osaaf.org
-  aafDeployPass: demo123456!
-  fqdn: policy
-  fqi: policy@policy.onap.org
-  public_fqdn: policy.onap.org
-  cadi_latitude: "0.0"
-  cadi_longitude: "0.0"
-  credsPath: /opt/app/osaaf/local
-  app_ns: org.osaaf.aaf
-  uid: 100
-  gid: 101
-  aaf_add_config: >
-    echo "export KEYSTORE='{{ .Values.credsPath }}/org.onap.policy.p12'" >> {{ .Values.credsPath }}/.ci;
-    echo "export KEYSTORE_PASSWD='${cadi_keystore_password_p12}'" >> {{ .Values.credsPath }}/.ci;
-    chown -R {{ .Values.uid }}:{{ .Values.gid }} $(dirname {{ .Values.credsPath }});
 
 # default number of instances
 replicaCount: 1
@@ -131,29 +110,35 @@ readiness:
 service:
   type: ClusterIP
   name: policy-distribution
-  portName: policy-distribution
-  externalPort: 6969
   internalPort: 6969
+  ports:
+    - name: http
+      port: 6969
 
 ingress:
   enabled: false
+
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: policy-pap-read
 
 flavor: small
 resources:
   small:
     limits:
-      cpu: 1
-      memory: 4Gi
+      cpu: "1"
+      memory: "500Mi"
     requests:
-      cpu: 100m
-      memory: 1Gi
+      cpu: "0.5"
+      memory: "500Mi"
   large:
     limits:
-      cpu: 2
-      memory: 8Gi
+      cpu: "2"
+      memory: "1Gi"
     requests:
-      cpu: 200m
-      memory: 2Gi
+      cpu: "1"
+      memory: "1Gi"
   unlimited: {}
 
 #Pods Service Account
@@ -161,3 +146,24 @@ serviceAccount:
   nameOverride: policy-distribution
   roles:
     - read
+
+metrics:
+  serviceMonitor:
+    # Override the labels based on the Prometheus config parameter: serviceMonitorSelector.
+    # The default operator for prometheus enforces the below label.
+    labels:
+      release: prometheus
+    enabled: true
+    port: policy-distribution
+    interval: 60s
+    isHttps: false
+    basicAuth:
+      enabled: true
+      externalSecretNameSuffix: policy-distribution-restserver-creds
+      externalSecretUserKey: login
+      externalSecretPasswordKey: password
+    selector:
+      app: '{{ include "common.name" . }}'
+      chart: '{{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}'
+      release: '{{ include "common.release" . }}'
+      heritage: '{{ .Release.Service }}'

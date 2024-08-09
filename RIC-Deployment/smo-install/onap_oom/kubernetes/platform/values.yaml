@@ -32,6 +32,14 @@ global:
 # Application configuration defaults.
 #################################################################
 
+# Control deployment of Platform services at ONAP installation time
+chartmuseum:
+  enabled: false
+cmpv2-cert-provider:
+  enabled: true
+oom-cert-service:
+  enabled: true
+
 flavor: small
 # default number of instances
 replicaCount: 1

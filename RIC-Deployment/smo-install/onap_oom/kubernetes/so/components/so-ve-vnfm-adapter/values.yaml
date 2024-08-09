@@ -20,8 +20,9 @@ global:
 
 readinessCheck:
   wait_for:
-    - aai
-    - message-router
+    services:
+      - aai
+      - message-router
 
 #################################################################
 # Application configuration defaults.
@@ -48,31 +49,22 @@ service:
     - name: http
       port: 9098
 
-#################################################################
-# soHelpers part
-#################################################################
-soHelpers:
-  nameOverride: so-vevnfm-cert-init
-  certInitializer:
-    nameOverride: so-vevnfm-cert-init
-    credsPath: /opt/app/osaaf/local
-
 flavor: small
 resources:
   small:
     limits:
-      memory: 512Mi
-      cpu: 500m
+      cpu: "1"
+      memory: "1Gi"
     requests:
-      memory: 256Mi
-      cpu: 250m
+      cpu: "0.5"
+      memory: "1Gi"
   large:
     limits:
-      memory: 8Gi
-      cpu: 4000m
+      cpu: "2"
+      memory: "2Gi"
     requests:
-      memory: 2Gi
-      cpu: 1000m
+      cpu: "1"
+      memory: "2Gi"
   unlimited: {}
 livenessProbe:
   port: 9098
@@ -84,6 +76,11 @@ livenessProbe:
 nodeSelector: {}
 tolerations: []
 affinity: {}
+
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: so-read
 
 #Pods Service Account
 serviceAccount:

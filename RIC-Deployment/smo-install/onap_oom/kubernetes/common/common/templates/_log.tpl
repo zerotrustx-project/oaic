@@ -29,11 +29,11 @@
     mountPath: /usr/share/filebeat/data
   resources:
     requests:
-      memory: "5Mi"
       cpu: "10m"
+      memory: "5Mi"
     limits:
-      memory: "20Mi"
       cpu: "100m"
+      memory: "20Mi"
 {{- end -}}
 {{- end -}}
 
@@ -59,4 +59,3 @@ data:
 {{ tpl (.Files.Glob "resources/config/log/filebeat/*").AsConfig . | indent 2 }}
 {{- end }}
 {{- end -}}
-

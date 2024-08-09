@@ -1,30 +1,22 @@
 apiVersion: apps/v1
 kind: Deployment
-metadata:
-  name: {{ include "common.fullname" . }}
-  namespace: {{ include "common.namespace" . }}
-  labels:
-    app: {{ include "common.name" . }}
-    chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
-    release: {{ include "common.release" . }}
-    heritage: {{ .Release.Service }}
+metadata: {{- include "common.resourceMetadata" . | nindent 2 }}
 spec:
-  selector:
-    matchLabels:
-      app: {{ include "common.name" . }}
+  selector: {{- include "common.selectors" . | nindent 4 }}
   replicas: {{ .Values.replicaCount }}
   template:
-    metadata:
-      labels:
-        app: {{ include "common.name" . }}
-        release: {{ include "common.release" . }}
+    metadata: {{- include "common.templateMetadata" . | nindent 6 }}
     spec:
       initContainers:
         - command:
           - /app/ready.py
           args:
           - --job-name
+{{ if not .Values.global.postgres.localCluster }}
           - {{ include "common.release" . }}-policy-galera-config
+{{ else }}
+          - {{ include "common.release" . }}-policy-pg-config
+{{ end }}
           env:
           - name: NAMESPACE
             valueFrom:
@@ -34,6 +26,13 @@ spec:
           image: {{ include "repositoryGenerator.image.readiness" . }}
           imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
           name: {{ include "common.name" . }}-readiness
+          resources:
+            limits:
+              cpu: "100m"
+              memory: "500Mi"
+            requests:
+              cpu: "3m"
+              memory: "20Mi"
         - command:
           - sh
           args:
@@ -56,26 +55,13 @@ spec:
           image: {{ include "repositoryGenerator.image.envsubst" . }}
           imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
           name: {{ include "common.name" . }}-update-config
-{{ include "common.certInitializer.initContainer" . | indent 8 }}
       containers:
         - name: {{ include "common.name" . }}
           image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
           imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
-{{- if .Values.global.aafEnabled }}
-          command: ["sh","-c"]
-          args: ["source {{ .Values.certInitializer.credsPath }}/.ci;\
-                  /opt/app/policy/api/bin/policy-api.sh /opt/app/policy/api/etc/mounted/config.json"]
-{{- else }}
           command: ["/opt/app/policy/api/bin/policy-api.sh"]
-          args: ["/opt/app/policy/api/etc/mounted/config.json"]
-          env:
-          - name: KEYSTORE_PASSWD
-            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "keystore-password" "key" "password") | indent 12 }}
-          - name: TRUSTSTORE_PASSWD
-            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "truststore-password" "key" "password") | indent 12 }}
-{{- end }}
-          ports:
-          - containerPort: {{ .Values.service.internalPort }}
+          args: ["/opt/app/policy/api/etc/mounted/apiParameters.yaml"]
+          ports: {{ include "common.containerPorts" . | nindent 12  }}
           # disable liveness probe when breakpoints set in debugger
           # so K8s doesn't restart unresponsive container
           {{- if eq .Values.liveness.enabled true }}
@@ -86,19 +72,22 @@ spec:
             periodSeconds: {{ .Values.liveness.periodSeconds }}
           {{ end -}}
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              path: {{ .Values.readiness.api }}
               port: {{ .Values.service.internalPort }}
+              httpHeaders:
+                - name: Authorization
+                  value: Basic {{ printf "%s:%s" .Values.restServer.user .Values.restServer.password | b64enc }}
+              scheme: HTTP
+            successThreshold: {{ .Values.readiness.successThreshold }}
+            failureThreshold: {{ .Values.readiness.failureThreshold }}
             initialDelaySeconds: {{ .Values.readiness.initialDelaySeconds }}
             periodSeconds: {{ .Values.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.readiness.timeout }}
           volumeMounts:
-{{ include "common.certInitializer.volumeMount" . | indent 10 }}
-          - mountPath: /etc/localtime
-            name: localtime
-            readOnly: true
           - mountPath: /opt/app/policy/api/etc/mounted
             name: apiconfig-processed
-          resources:
-{{ include "common.resources" . }}
+          resources: {{ include "common.resources" . | nindent 12 }}
         {{- if .Values.nodeSelector }}
         nodeSelector:
 {{ toYaml .Values.nodeSelector | indent 10 }}
@@ -109,10 +98,6 @@ spec:
         {{- end }}
       serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
       volumes:
-{{ include "common.certInitializer.volumes" . | indent 8 }}
-        - name: localtime
-          hostPath:
-             path: /etc/localtime
         - name: apiconfig
           configMap:
             name: {{ include "common.fullname" . }}-configmap
@@ -120,5 +105,4 @@ spec:
         - name: apiconfig-processed
           emptyDir:
             medium: Memory
-      imagePullSecrets:
-      - name: "{{ include "common.namespace" . }}-docker-registry-key"
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

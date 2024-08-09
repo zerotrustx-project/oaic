@@ -35,7 +35,7 @@ global:
     password: docker
 
   # readiness check
-  readinessImage: onap/oom/readiness:3.0.1
+  readinessImage: onap/oom/readiness:6.0.3
 
   # logging agent - temporary repo until images migrated to nexus3
   loggingRepository: docker.elastic.co
@@ -68,35 +68,15 @@ global:
 # Enable/disable and configure helm charts (ie. applications)
 # to customize the ONAP deployment.
 #################################################################
-aaf:
-  enabled: true
 aai:
   enabled: true
-appc:
-  enabled: false
-  config:
-    openStackType: OpenStackProvider
-    openStackName: OpenStack
-    openStackKeyStoneUrl: http://localhost:8181/apidoc/explorer/index.html
-    openStackServiceTenantName: default
-    openStackDomain: default
-    openStackUserName: admin
-    openStackEncryptedPassword: admin
 cassandra:
   enabled: true
 cds:
   enabled: true
-clamp:
-  enabled: false
 cli:
   enabled: false
-consul:
-  enabled: false
-contrib:
-  enabled: false
 cps:
-  enabled: false
-dcaegen2:
   enabled: false
 dcaegen2-services:
   enabled: false
@@ -104,10 +84,12 @@ holmes:
   enabled: false
 dmaap:
   enabled: true
-log:
-  enabled: true
-sniro-emulator:
-  enabled: false
+  message-router:
+    enabled: true
+  dmaap-dr-prov:
+    enabled: false
+  dmaap-dr-node:
+    enabled: false
 oof:
   enabled: true
 mariadb-galera:
@@ -124,14 +106,12 @@ nbi:
     openStackVNFTenantId: "1234"
 policy:
   enabled: true
-pomba:
-  enabled: false
-portal:
+portal-ng:
   enabled: true
 robot:
   enabled: true
   config:
-    # openStackEncryptedPasswordHere should match the encrypted string used in SO and APPC and overridden per environment
+    # openStackEncryptedPasswordHere should match the encrypted string used in SO and overridden per environment
     openStackEncryptedPasswordHere: "c124921a3a0efbe579782cde8227681e"
 sdc:
   enabled: true
@@ -163,11 +143,13 @@ so:
     openStackServiceTenantName: "service"
     openStackEncryptedPasswordHere: "c124921a3a0efbe579782cde8227681e"
 
+strimzi:
+  enabled: true
+  strimzi-kafka-bridge:
+    enabled: false
 uui:
   enabled: true
 vfc:
-  enabled: false
-vid:
   enabled: false
 vnfsdk:
   enabled: false

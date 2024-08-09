@@ -31,10 +31,7 @@ spec:
       maxSurge: {{ index .Values.updateStrategy.maxSurge }}
   selector: {{- include "common.selectors" . | nindent 4 }}
   template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: {{ include "common.name" . }}
-        app.kubernetes.io/instance: {{ include "common.release" . }}
+    metadata: {{- include "common.templateMetadata" . | nindent 6 }}
     spec:
       {{ include "common.podSecurityContext" . | indent 6 | trim}}
       serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . ) }}
@@ -60,6 +57,11 @@ spec:
             {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "cps-core-creds" "key" "login") | indent 12 }}
           - name: CPS_CORE_PASSWORD
             {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "cps-core-creds" "key" "password") | indent 12 }}
+          - name: SASL_JAAS_CONFIG
+            valueFrom:
+              secretKeyRef:
+                name: {{ include "common.name" . }}-ku
+                key: sasl.jaas.config
         volumeMounts:
           - mountPath: /config-input
             name: init-data-input
@@ -90,6 +92,11 @@ spec:
         env:
           - name: SPRING_PROFILES_ACTIVE
             value: {{ .Values.config.spring.profile }}
+          - name: SASL_JAAS_CONFIG
+            valueFrom:
+              secretKeyRef:
+                name: {{ include "common.name" . }}-ku
+                key: sasl.jaas.config
         resources: {{ include "common.resources" . | nindent 10 }}
         {{- if .Values.nodeSelector }}
         nodeSelector: {{ toYaml .Values.nodeSelector | nindent 12 }}
@@ -112,5 +119,4 @@ spec:
             medium: Memory
         - name: init-temp
           emptyDir: {}
-      imagePullSecrets:
-        - name: "{{ include "common.namespace" . }}-docker-registry-key"
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

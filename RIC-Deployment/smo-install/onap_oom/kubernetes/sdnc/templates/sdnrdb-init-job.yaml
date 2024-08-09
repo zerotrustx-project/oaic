@@ -23,23 +23,21 @@ spec:
     metadata: {{ include "common.templateMetadata" . | indent 6}}
     spec:
       initContainers:
-      {{ include "common.certInitializer.initContainer" . | indent 6 }}
-      {{ if .Values.global.aafEnabled }}
-      - name: {{ include "common.name" . }}-chown
-        image: {{ include "repositoryGenerator.image.busybox" . }}
-        command: ["sh", "-c", "chown -R {{ .Values.config.odlUid }}:{{ .Values.config.odlGid}} {{ .Values.certInitializer.credsPath }}"]
-        volumeMounts: {{ include "common.certInitializer.volumeMount" . | nindent 10 }}
-      {{ end }}
       - name: {{ include "common.name" . }}-readiness
         command:
         - /app/ready.py
         args:
+        {{- if .Values.config.sdnr.mariadb.enabled }}
+        - --service-name
+        - {{ include "common.mariadbService" . }}
+        {{- else }}
         - --container-name
         - {{.Values.elasticsearch.nameOverride}}-elasticsearch
         - --container-name
         - {{.Values.elasticsearch.nameOverride}}-nginx
         - --container-name
         - {{.Values.elasticsearch.nameOverride}}-master
+        {{- end }}
         env:
         - name: NAMESPACE
           valueFrom:
@@ -48,15 +46,28 @@ spec:
               fieldPath: metadata.namespace
         image: {{ include "repositoryGenerator.image.readiness" . }}
         imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        resources:
+          limits:
+            cpu: "100m"
+            memory: "500Mi"
+          requests:
+            cpu: "3m"
+            memory: "20Mi"
       containers:
       - name: {{ include "common.name" . }}-sdnrdb-init-job
         image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
         imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
         command: ["/bin/bash"]
-        args: ["-c", "{{ .Values.config.binDir }}/startODL.sh"]
+        args:
+          - -c
+          - |
+            {{- if .Values.config.sdnr.mariadb.enabled }}
+            "{{ .Values.config.binDir }}/createSdnrDb.sh";
+            {{- end }}
+            sleep 90; "{{ .Values.config.binDir }}/startODL.sh"
         env:
           - name: SDNC_AAF_ENABLED
-            value: "{{ .Values.global.aafEnabled}}"
+            value: "false"
           - name: SDNC_HOME
             value: "{{.Values.config.sdncHome}}"
           - name: ETC_DIR
@@ -66,26 +77,60 @@ spec:
           ## start sdnrdb parameter
           - name: SDNRINIT
             value: "true"
+          {{- if .Values.config.sdnr.mariadb.enabled }}
+          - name: SDNRDBTYPE
+            value: MARIADB
+          - name: MYSQL_HOST
+            value: {{ include "common.mariadbService" . }}
+          - name: MYSQL_ROOT_PASSWORD
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "db-root-password" "key" "password") | indent 12 }}
           - name: SDNRDBURL
-            {{ if .Values.global.aafEnabled -}}
-            value: "https://{{ .Values.elasticsearch.service.name | default "sdnrdb"}}.{{.Release.Namespace}}:{{.Values.elasticsearch.service.port | default "9200"}}"
-            {{- else -}}
+            value: "jdbc:mysql://{{ include "common.mariadbService" . }}:3306/{{ .Values.config.sdnr.mariadb.databaseName }}"
+          - name: SDNRDBDATABASE
+            value: "{{ .Values.config.sdnr.mariadb.databaseName }}"
+          - name: SDNRDBUSERNAME
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "sdnrdb-secret" "key" "login") | indent 12 }}
+          - name: SDNRDBPASSWORD
+            {{- include "common.secret.envFromSecretFast" (dict "global" . "uid" "sdnrdb-secret" "key" "password") | indent 12 }}
+          {{- else }}
+          - name: SDNRDBURL
             value: "http://{{ .Values.elasticsearch.service.name | default "sdnrdb"}}.{{.Release.Namespace}}:{{.Values.elasticsearch.service.port | default "9200"}}"
-            {{- end }}
           - name: SDNRDBPARAMETER
             value: "-k"
-        volumeMounts: {{ include "common.certInitializer.volumeMount" . | nindent 10 }}
-        resources: {{ include "common.resources" . | nindent 12 }}
+          {{- end }}
+        {{- if .Values.config.sdnr.mariadb.enabled }}
+        volumeMounts:
+          - mountPath: {{ .Values.config.binDir }}/createSdnrDb.sh
+            name: bin
+            subPath: createSdnrDb.sh
+        {{- end }}
+        resources: {{ include "common.resources" . | nindent 10 }}
+      {{- if include "common.onServiceMesh" . }}
+      - name: sdnrdb-service-mesh-wait-for-job-container
+        image: {{ include "repositoryGenerator.image.quitQuit" . }}
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        command:
+          - /bin/sh
+          - "-c"
+        args:
+          - |
+            echo "waiting 30s for istio side cars to be up"; sleep 30s;
+            /app/ready.py --service-mesh-check sdnc-sdnrdb-init-job -t 45;
+        env:
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+      {{- end }}
       {{- if .Values.nodeSelector }}
       nodeSelector: {{ toYaml .Values.nodeSelector | nindent 10 }}
       {{- end -}}
       {{- if .Values.affinity }}
       affinity: {{ toYaml .Values.affinity | nindent 10 }}
       {{- end }}
+      serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
       volumes:
-      - name: localtime
-        hostPath:
-          path: /etc/localtime
       - name: docker-entrypoint-initdb-d
         emptyDir: {}
       - name: bin
@@ -96,9 +141,6 @@ spec:
         configMap:
           name: {{ include "common.fullname" . }}-properties
           defaultMode: 0644
-{{ include "common.certInitializer.volumes" . | nindent 6 }}
       restartPolicy: Never
-      imagePullSecrets:
-      - name: "{{ include "common.namespace" . }}-docker-registry-key"
-
+      {{- include "common.imagePullSecrets" . | nindent 6 }}
 {{ end -}}

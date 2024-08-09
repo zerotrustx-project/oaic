@@ -34,7 +34,7 @@ spec:
         release: {{ include "common.release" . }}
       name: {{ include "common.name" . }}
     spec:
-      initContainers:
+      initContainers: {{ include "common.readinessCheck.waitFor" . | nindent 6 }}
       - command:
         - sh
         args:
@@ -75,21 +75,6 @@ spec:
         image: {{ include "repositoryGenerator.image.envsubst" . }}
         imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
         name: {{ include "common.name" . }}-update-config
-
-      - name: {{ include "common.name" . }}-readiness
-        command:
-        - /app/ready.py
-        args:
-        - --container-name
-        - {{ include "common.mariadbService" . }}
-        env:
-        - name: NAMESPACE
-          valueFrom:
-            fieldRef:
-              apiVersion: v1
-              fieldPath: metadata.namespace
-        image: {{ include "repositoryGenerator.image.readiness" . }}
-        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
       containers:
       - name: {{ include "common.name" . }}
         image: {{ include "repositoryGenerator.repository" . }}/{{ .Values.image }}
@@ -131,18 +116,36 @@ spec:
         command:
           - /bin/bash
         args:
-          - {{.Values.config.binDir }}/installSdncDb.sh
+          - -c
+          - |
+            sleep 60; {{.Values.config.binDir }}/installSdncDb.sh
         resources: {{ include "common.resources" . | nindent 10 }}
+      {{- if include "common.onServiceMesh" . }}
+      - name: sdnc-service-mesh-wait-for-job-container
+        image: {{ include "repositoryGenerator.image.quitQuit" . }}
+        imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+        command:
+          - /bin/sh
+          - "-c"
+        args:
+          - |
+            echo "waiting 20s for istio side cars to be up"; sleep 20s;
+            /app/ready.py --service-mesh-check sdnc -t 45;
+        env:
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+      {{- end }}
       {{- if .Values.nodeSelector }}
       nodeSelector: {{ toYaml .Values.nodeSelector | nindent 8 }}
       {{- end }}
       {{- if .Values.affinity }}
       affinity: {{ toYaml .Values.affinity | nindent 8 }}
       {{- end }}
+      serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
       volumes:
-      - name: localtime
-        hostPath:
-          path: /etc/localtime
       - name: docker-entrypoint-initdb-d
         emptyDir: {}
       - name: bin
@@ -157,6 +160,5 @@ spec:
         emptyDir:
           medium: Memory
       restartPolicy: Never
-      imagePullSecrets:
-      - name: "{{ include "common.namespace" . }}-docker-registry-key"
+      {{- include "common.imagePullSecrets" . | nindent 6 }}
 {{- end -}}

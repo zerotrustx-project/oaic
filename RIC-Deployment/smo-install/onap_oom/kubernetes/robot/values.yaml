@@ -22,7 +22,7 @@ global: # global defaults
 
 # application image
 repository: nexus3.onap.org:10001
-image: onap/testsuite:1.8.0
+image: onap/testsuite:1.12.2
 pullPolicy: Always
 
 ubuntuInitImage: oomk8s/ubuntu-init:2.0.0
@@ -44,14 +44,6 @@ config:
         enabled: true
         https: true
         hostname: aai.api.sparky
-      appc:
-        enabled: true
-        https: true
-        hostname: appc.api
-      appc_cdt:
-        enabled: true
-        https: true
-        hostname: appccdt
       clamp:
         enabled: true
         https: true
@@ -65,13 +57,20 @@ config:
       dcae_ves_colector_https:
         enabled: false
         https: true
+      message_router:
+        enabled: false
+        https: false
+      dmaap_bc:
+        enabled: true
+        https: false
+        hostname: dmaapbc
       dmaap_dr_prov:
         enabled: true
-        https: true
+        https: false
         hostname: dmaapdrprov
       dmaap_dr_node:
         enabled: true
-        https: true
+        https: false
         hostname: dmaapdrnode
       log_es:
         enabled: false
@@ -99,13 +98,6 @@ config:
         enabled: false
       pomba_contextaggregator:
         enabled: false
-      message_router:
-        enabled: false
-        https: true
-      dmaap_bc:
-        enabled: true
-        https: true
-        hostname: dmaapbc
       music:
         enabled: false
         https: true
@@ -137,8 +129,6 @@ config:
       policy_xacml_pdp:
         enabled: false
       policy_apex_pdp:
-        enabled: false
-      policy_distribution:
         enabled: false
       portal_app:
         enabled: false
@@ -193,8 +183,6 @@ config:
         enabled: true
         hostname: blueprintsprocessorhttp
       dcae_hv_ves_collector:
-        enabled: false
-      message_router_kafka:
         enabled: false
       inventory:
         enabled: false
@@ -319,9 +307,6 @@ aafPassword: "demo123456!"
 # AAI
 aaiUsername: "aai@aai.onap.org"
 aaiPassword: "demo123456!"
-# APPC
-appcUsername: "appc@appc.onap.org"
-appcPassword: "demo123456!"
 # SDC
 sdcUsername: "beep"
 sdcPassword: "boop"
@@ -361,12 +346,13 @@ vidUsername: "demo"
 vidPassword: "Kp8bJ4SXszM0WX"
 vidHealthUsername: "Default"
 vidHealthPassword: "AppPassword!1"
+
 # DMAAP BC
 bcUsername: "dmaap-bc@dmaap-bc.onap.org"
 bcPassword: "demo123456!"
-# DMAAP KAFKA JAAS
-kafkaJaasUsername: "admin"
-kafkaJaasPassword: "admin_secret"
+
+# STRIMZI KAFKA
+strimziKafkaUsername: "strimzi-kafka-admin"
 
 #OOF
 oofUsername: "oof@oof.onap.org"
@@ -396,18 +382,18 @@ flavor: small
 resources:
   small:
     limits:
-      cpu: 2000m
-      memory: 4Gi
+      cpu: "2000m"
+      memory: "4Gi"
     requests:
-      cpu: 500m
-      memory: 1Gi
+      cpu: "500m"
+      memory: "1Gi"
   large:
     limits:
-      cpu: 4000m
-      memory: 8Gi
+      cpu: "4000m"
+      memory: "8Gi"
     requests:
-      cpu: 1000m
-      memory: 2Gi
+      cpu: "1000m"
+      memory: "2Gi"
   unlimited: {}
 
 # probe configuration parameters
@@ -424,7 +410,7 @@ readiness:
 
 service:
   name: robot
-  type: NodePort
+  type: ClusterIP
   portName: httpd
   externalPort: 443
   internalPort: 443
@@ -433,7 +419,7 @@ service:
 ingress:
   enabled: false
   service:
-    - baseaddr: "robot.api"
+    - baseaddr: "robot-api"
       name: "robot"
       port: 443
   config:
@@ -462,3 +448,9 @@ persistence:
   size: 2Gi
   mountPath: /dockerdata-nfs
   mountSubPath: robot/logs
+
+#Pods Service Account
+serviceAccount:
+  nameOverride: robot
+  roles:
+    - read

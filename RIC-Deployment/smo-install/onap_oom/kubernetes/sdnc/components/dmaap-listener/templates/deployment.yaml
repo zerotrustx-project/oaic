@@ -18,9 +18,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata: {{- include "common.resourceMetadata" . | nindent 2 }}
 spec:
-  selector:
-    matchLabels:
-      app: {{ include "common.name" . }}
   replicas: {{ .Values.replicaCount }}
   selector: {{- include "common.selectors" . | nindent 4 }}
   template:
@@ -53,11 +50,11 @@ spec:
       - command:
         - /app/ready.py
         args:
-        - --container-name
+        - --service-name
         - {{ include "common.mariadbService" . }}
-        - --container-name
+        - --service-name
         - {{ .Values.config.sdncChartName }}
-        - --container-name
+        - --service-name
         - {{ .Values.config.msgRouterContainerName }}
         env:
         - name: NAMESPACE
@@ -68,6 +65,13 @@ spec:
         image: {{ include "repositoryGenerator.image.readiness" . }}
         imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
         name: {{ include "common.name" . }}-readiness
+        resources:
+          limits:
+            cpu: "100m"
+            memory: "500Mi"
+          requests:
+            cpu: "3m"
+            memory: "20Mi"
       containers:
       - command:
         - /opt/onap/sdnc/dmaap-listener/bin/start-dmaap-listener.sh
@@ -82,9 +86,6 @@ spec:
         - name: LOG4J_FORMAT_MSG_NO_LOOKUPS
           value: "true"
         volumeMounts:
-        - mountPath: /etc/localtime
-          name: localtime
-          readOnly: true
         - mountPath: {{ .Values.config.configDir }}/dblib.properties
           name: properties
           subPath: dblib.properties
@@ -110,6 +111,7 @@ spec:
           name: properties
           subPath: dmaap-consumer-RANSlice.properties
         resources: {{ include "common.resources" . | nindent 10 }}
+        ports: {{ include "common.containerPorts" . | nindent 10  }}
       {{- if .Values.nodeSelector }}
       nodeSelector: {{ toYaml .Values.nodeSelector | nindent 8 }}
       {{- end }}
@@ -118,9 +120,6 @@ spec:
       {{- end }}
       serviceAccountName: {{ include "common.fullname" (dict "suffix" "read" "dot" . )}}
       volumes:
-        - name: localtime
-          hostPath:
-            path: /etc/localtime
         - name: config-input
           configMap:
             name: {{ include "common.fullname" . }}
@@ -128,5 +127,4 @@ spec:
         - name: properties
           emptyDir:
             medium: Memory
-      imagePullSecrets:
-      - name: "{{ include "common.namespace" . }}-docker-registry-key"
+      {{- include "common.imagePullSecrets" . | nindent 6 }}

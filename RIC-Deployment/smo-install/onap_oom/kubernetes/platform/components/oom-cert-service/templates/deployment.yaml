@@ -22,9 +22,18 @@ spec:
   selector: {{- include "common.selectors" . | nindent 4 }}
   template:
     metadata: {{- include "common.templateMetadata" . | nindent 6 }}
+      {{- if (include "common.onServiceMesh" . ) }}
+      annotations:
+      {{- if eq ( .Values.global.serviceMesh.engine ) "linkerd" }}
+        linkerd.io/inject: disabled
+      {{- end }}
+      {{- if eq ( .Values.global.serviceMesh.engine ) "istio" }}
+          traffic.sidecar.istio.io/excludeInboundPorts: "8080,8443"
+          traffic.sidecar.istio.io/includeInboundPorts: '*'
+      {{- end }}
+      {{- end }}
     spec:
-      imagePullSecrets:
-      - name: "{{ include "common.namespace" . }}-docker-registry-key"
+      {{- include "common.imagePullSecrets" . | nindent 6 }}
       volumes:
 {{- if .Values.global.addTestingComponents }}
         - name: cmp-servers-template-volume
@@ -47,7 +56,7 @@ spec:
           command:
           - /app/ready.py
           args:
-          - --container-name
+          - --service-name
           - ejbca-ejbca
           env:
           - name: NAMESPACE
@@ -57,6 +66,13 @@ spec:
                 fieldPath: metadata.namespace
           image: {{ include "repositoryGenerator.image.readiness" . }}
           imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}
+          resources:
+            limits:
+              cpu: "100m"
+              memory: "500Mi"
+            requests:
+              cpu: "3m"
+              memory: "20Mi"
         - name: subsitute-envs
           image: {{ include "repositoryGenerator.image.envsubst" . }}
           imagePullPolicy: {{ .Values.global.pullPolicy | default .Values.pullPolicy }}

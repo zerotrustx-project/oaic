@@ -1,7 +1,8 @@
 #  ============LICENSE_START=======================================================
 #   Copyright (C) 2019 Nordix Foundation.
 #   Modifications Copyright (C) 2019-2021 AT&T Intellectual Property.
-#   Modifications Copyright (C) 2020 Bell Canada.
+#   Modifications Copyright (C) 2020-2022 Bell Canada. All rights reserved.
+#   Modifications Copyright © 2022 Nordix Foundation
 #  ================================================================================
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -24,7 +25,8 @@
 global:
   nodePortPrefixExt: 304
   persistence: {}
-  aafEnabled: true
+  postgres:
+    localCluster: false
 
 #################################################################
 # Secrets metaconfig
@@ -54,45 +56,19 @@ secrets:
     login: '{{ .Values.healthCheckRestClient.distribution.user }}'
     password: '{{ .Values.healthCheckRestClient.distribution.password }}'
     passwordPolicy: required
-  - uid: keystore-password
-    type: password
-    externalSecret: '{{ tpl (default "" .Values.certStores.keyStorePasswordExternalSecret) . }}'
-    password: '{{ .Values.certStores.keyStorePassword }}'
-    passwordPolicy: required
-  - uid: truststore-password
-    type: password
-    externalSecret: '{{ tpl (default "" .Values.certStores.trustStorePasswordExternalSecret) . }}'
-    password: '{{ .Values.certStores.trustStorePassword }}'
-    passwordPolicy: required
-
-certStores:
-  keyStorePassword: Pol1cy_0nap
-  trustStorePassword: Pol1cy_0nap
-
-certInitializer:
-  nameOverride: policy-pap-cert-initializer
-  aafDeployFqi: deployer@people.osaaf.org
-  aafDeployPass: demo123456!
-  fqdn: policy
-  fqi: policy@policy.onap.org
-  public_fqdn: policy.onap.org
-  cadi_latitude: "0.0"
-  cadi_longitude: "0.0"
-  credsPath: /opt/app/osaaf/local
-  app_ns: org.osaaf.aaf
-  uid: 100
-  gid: 101
-  aaf_add_config: >
-    echo "export KEYSTORE='{{ .Values.credsPath }}/org.onap.policy.p12'" > {{ .Values.credsPath }}/.ci;
-    echo "export KEYSTORE_PASSWD='${cadi_keystore_password_p12}'" >> {{ .Values.credsPath }}/.ci;
-    chown -R {{ .Values.uid }}:{{ .Values.gid }} $(dirname {{ .Values.credsPath }});
-
+  - uid: policy-kafka-user
+    externalSecret: '{{ tpl (default "" .Values.config.jaasConfExternalSecret) . }}'
+    type: genericKV
+    envs:
+      - name: sasl.jaas.config
+        value: '{{ .Values.config.someConfig }}'
+        policy: generate
 
 #################################################################
 # Application configuration defaults.
 #################################################################
 # application image
-image: onap/policy-pap:2.6.0
+image: onap/policy-pap:3.1.3
 pullPolicy: Always
 
 # flag to enable debugging - application support required
@@ -101,15 +77,17 @@ debugEnabled: false
 # application configuration
 
 db:
-  user: policy_user
+  user: policy-user
   password: policy_user
   service:
     name: policy-mariadb
+    pgName: policy-pg-primary
     internalPort: 3306
+    internalPgPort: 5432
 
 restServer:
   user: policyadmin
-  password: none
+  password: zb!XztG34
 
 healthCheckRestClient:
   api:
@@ -128,7 +106,7 @@ affinity: {}
 
 # probe configuration parameters
 liveness:
-  initialDelaySeconds: 20
+  initialDelaySeconds: 60
   periodSeconds: 10
   # necessary to disable liveness probe when setting breakpoints
   # in debugger so K8s doesn't restart unresponsive container
@@ -136,38 +114,49 @@ liveness:
   port: http-api
 
 readiness:
-  initialDelaySeconds: 20
-  periodSeconds: 10
+  initialDelaySeconds: 10
+  periodSeconds: 120
   port: http-api
+  api: /policy/pap/v1/healthcheck
+  successThreshold: 1
+  failureThreshold: 3
+  timeout: 60
 
 service:
   type: ClusterIP
   name: policy-pap
-  useNodePortExt: true
   ports:
   - name: http-api
     port: 6969
-    nodePort: 42
+  - name: debug-port
+    port: 5005
+    protocol: TCP
 
 ingress:
   enabled: false
+
+serviceMesh:
+  authorizationPolicy:
+    authorizedPrincipals:
+      - serviceAccount: strimzi-kafka-read
+      - serviceAccount: portal-app-read
 
 flavor: small
 resources:
   small:
     limits:
-      cpu: 1
-      memory: 4Gi
+      cpu: "1"
+      memory: "1Gi"
     requests:
-      cpu: 100m
-      memory: 1Gi
+      cpu: "0.5"
+      memory: "1Gi"
   large:
     limits:
-      cpu: 2
-      memory: 8Gi
+      cpu: "2"
+      memory: "2Gi"
     requests:
-      cpu: 200m
-      memory: 2Gi
+      cpu: "1"
+      memory: "2Gi"
   unlimited: {}
 
 #Pods Service Account
@@ -175,3 +164,64 @@ serviceAccount:
   nameOverride: policy-pap
   roles:
     - read
+
+metrics:
+  serviceMonitor:
+    # Override the labels based on the Prometheus config parameter: serviceMonitorSelector.
+    # The default operator for prometheus enforces the below label.
+    labels:
+      release: prometheus
+    enabled: true
+    port: http-api
+    interval: 60s
+    isHttps: false
+    basicAuth:
+      enabled: true
+      externalSecretNameSuffix: policy-pap-user-creds
+      externalSecretUserKey: login
+      externalSecretPasswordKey: password
+
+# application configuration
+config:
+# Event consumption (kafka) properties
+  kafka:
+    topics:
+      policyHeartbeat: policy-heartbeat
+      policyNotification: policy-notification
+      policyPdpPap: policy-pdp-pap
+    consumer:
+      groupId: policy-pap
+  app:
+    listener:
+      policyPdpPapTopic: policy-pdp-pap
+
+# If targeting a custom kafka cluster, ie useStrimziKakfa: false
+# uncomment below config and target your kafka bootstrap servers,
+# along with any other security config.
+#
+# eventConsumption:
+#   spring.kafka.bootstrap-servers: <kafka-bootstrap>:9092
+#   spring.kafka.security.protocol: PLAINTEXT
+#   spring.kafka.consumer.group-id: policy-group
+#
+# Any new property can be added in the env by setting in overrides in the format mentioned below
+# All the added properties must be in "key: value" format instead of yaml.
+kafkaUser:
+  authenticationType: scram-sha-512
+  acls:
+    - name: policy-pap
+      type: group
+      operations: [Create, Describe, Read, Write]
+    - name: policy-pdp-pap
+      type: topic
+      patternType: prefix
+      operations: [Create, Describe, Read, Write]
+    - name: policy-heartbeat
+      type: topic
+      patternType: prefix
+      operations: [Create, Describe, Read, Write]
+    - name: policy-notification
+      type: topic
+      patternType: prefix
+      operations: [Create, Describe, Read, Write]
+

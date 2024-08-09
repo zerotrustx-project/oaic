@@ -18,14 +18,34 @@
 global:
   nodePortPrefixExt: 304
   persistence: {}
-  artifactImage: onap/multicloud/framework-artifactbroker:1.7.2
+  artifactImage: onap/multicloud/framework-artifactbroker:1.9.0
+  # Docker Repository used by RepositoryGenerator
+  dockerHubRepository: docker.io
+  # Additions for MongoDB****************************
+  # If dockerHubRepository is changes the following entry needs
+  # to be changed as well
+  imageRegistry: docker.io
+  imagePullSecrets:
+    - '{{ include "common.names.namespace" . }}-docker-registry-key'
+  # *************************************************
 
 #################################################################
 # Application configuration defaults.
 #################################################################
 # application image
-image: onap/multicloud/k8s:0.9.3
+image: onap/multicloud/k8s:0.10.1
 pullPolicy: Always
+
+# Strimzi KafkaUser config
+kafkaUser:
+  acls:
+    - name: multicloud
+      type: group
+      operations: [Read]
+    - name: SDC-DISTR
+      type: topic
+      patternType: prefix
+      operations: [Read, Write]
 
 # flag to enable debugging - application support required
 debugEnabled: false
@@ -52,53 +72,78 @@ readiness:
   periodSeconds: 30
 
 service:
-  type: ClusterIP
-  name: multicloud-k8s
-  portName: multicloud-k8s
+  type: NodePort
   internalPort: 9015
-  externalPort: 9015
-  nodePort: 98
+  ports:
+    - name: http
+      port: 9015
+      nodePort: '98'
+      useNodePortExt: true
+  annotations:
+    msb.onap.org/service-info: |
+      {{ if .Values.global.msbEnabled -}}[
+        {
+          "serviceName": "multicloud-k8s",
+          "version": "v1",
+          "url": "/",
+          "protocol": "REST",
+          "port": "{{ .Values.service.internalPort }}",
+          "enable_ssl": false,
+          "visualRange": "1"
+        }
+      ]{{ end }}
+
+ingress:
+  enabled: false
+  service:
+    - baseaddr: 'multicloud-k8s-api'
+      name: 'multicloud-k8s'
+      port: 9015
 
 #Mongo chart overrides for k8splugin
-mongo:
+mongodb:
   nameOverride: multicloud-k8s-mongo
   service:
-    name: multicloud-k8s-mongo
-    internalPort: 27017
-  nfsprovisionerPrefix: multicloud-k8s
-  sdnctlPrefix: multicloud-k8s
-  persistence:
-    mountSubPath: multicloud-k8s/mongo/data
-    enabled: true
-  disableNfsProvisioner: true
-  flavor: &storage_flavor large
-  resources: &storage_resources
-    small:
-      limits:
-        cpu: 100m
-        memory: 300Mi
-      requests:
-        cpu: 10m
-        memory: 75Mi
-    large:
-      limits:
-        cpu: 200m
-        memory: 1Gi
-      requests:
-        cpu: 50m
-        memory: 300Mi
-    unlimited: {}
+    nameOverride: multicloud-k8s-mongo
+    port: 27017
+  auth:
+    enabled: false
+  resources:
+    limits:
+      cpu: "2"
+      memory: "2Gi"
+    requests:
+      cpu: "500m"
+      memory: "2Gi"
 
 #etcd chart overrides for k8splugin
 etcd:
   nameOverride: multicloud-k8s-etcd
   service:
     name: multicloud-k8s-etcd
+    clientPortName: tcp-etcd-client
+    peerPortName: tcp-etcd-server
   persistence:
     mountSubPath: multicloud-k8s/etcd/data
     enabled: true
-  flavor: *storage_flavor
-  resources: *storage_resources
+  flavor: large
+  resources:
+    small:
+      limits:
+        cpu: "100m"
+        memory: "300Mi"
+      requests:
+        cpu: "10m"
+        memory: "70Mi"
+    large:
+      limits:
+        cpu: "200m"
+        memory: "1Gi"
+      requests:
+        cpu: "50m"
+        memory: "300Mi"
+    unlimited: {}
+
 
 # No persistence right now as we rely on Mongo to handle that
 persistence:
@@ -109,9 +154,6 @@ persistence:
   mountPath: /dockerdata-nfs
   mountSubPath: multicloud-k8s/data
 
-ingress:
-  enabled: false
-
 artifactbroker:
   internalPort: 9014
 
@@ -120,18 +162,18 @@ flavor: large
 resources:
   small:
     limits:
-      cpu: 200m
-      memory: 500Mi
+      cpu: "200m"
+      memory: "500Mi"
     requests:
-      cpu: 10m
-      memory: 10Mi
+      cpu: "10m"
+      memory: "10Mi"
   large:
     limits:
-      cpu: 400m
-      memory: 1Gi
+      cpu: "400m"
+      memory: "1Gi"
     requests:
-      cpu: 10m
-      memory: 100Mi
+      cpu: "10m"
+      memory: "100Mi"
   unlimited: {}
 
 #Pods Service Account
